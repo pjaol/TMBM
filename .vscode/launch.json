@@ -1,0 +1,22 @@
+{
+    "configurations": [
+        {
+            "type": "lldb",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:tmbm}",
+            "name": "Debug TMBM",
+            "program": "${workspaceFolder:tmbm}/.build/debug/TMBM",
+            "preLaunchTask": "swift: Build Debug TMBM"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:tmbm}",
+            "name": "Release TMBM",
+            "program": "${workspaceFolder:tmbm}/.build/release/TMBM",
+            "preLaunchTask": "swift: Build Release TMBM"
+        }
+    ]
+}
