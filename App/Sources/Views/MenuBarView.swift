@@ -63,7 +63,7 @@ struct MenuBarView: View {
                 }
                 
                 Button("Open Backup Manager") {
-                    NSApp.activate(ignoringOtherApps: true)
+                    openNewWindow()
                 }
                 
                 Button("Quit") {
@@ -74,7 +74,9 @@ struct MenuBarView: View {
         .padding()
         .frame(width: 280)
         .onAppear {
-            viewModel.updateStatus()
+            Task {
+                await viewModel.updateStatus()
+            }
         }
     }
 } 
