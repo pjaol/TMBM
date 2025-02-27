@@ -1,30 +1,19 @@
 #!/bin/bash
 
-# Script to build and run the TMBM application
+# Script to run the TMBM App
 
-echo "Building and running TMBM application..."
+echo "Running TMBM App..."
 
 # Navigate to the project directory
 cd "$(dirname "$0")/.."
 
-# Build the core package
-echo "Building core package..."
-./scripts/build_core.sh
-
-# Check if core build was successful
-if [ $? -ne 0 ]; then
-    echo "Core package build failed. Aborting."
-    exit 1
-fi
-
-# Build and run the app
-echo "Building and running app..."
-./scripts/build_app.sh
-
-# Check if app build/run was successful
-if [ $? -ne 0 ]; then
-    echo "App build/run failed."
-    exit 1
-fi
-
-echo "TMBM application built and running successfully." 
+# Check if the app bundle exists
+APP_BUNDLE="build/TMBMApp.app"
+if [ ! -d "$APP_BUNDLE" ]; then
+    echo "App bundle not found. Building it first..."
+    ./scripts/build_app_bundle.sh
+else
+    # Open the app bundle
+    echo "Opening the app bundle..."
+    open "$APP_BUNDLE"
+fi 

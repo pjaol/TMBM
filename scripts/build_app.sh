@@ -10,11 +10,17 @@ cd "$(dirname "$0")/.."
 # Create a build directory if it doesn't exist
 mkdir -p build
 
-# Compile the Swift files
-# Note: Order matters - TMBMApp.swift must be compiled first since main.swift references its types
+# Find all Swift files in the CorePackage except main.swift
+CORE_FILES=$(find CorePackage/Sources -name "*.swift" | grep -v "main.swift" | tr '\n' ' ')
+
+# Find all Swift files in the App
+APP_FILES=$(find App/Sources -name "*.swift" | tr '\n' ' ')
+
+# Compile all Swift files together
+echo "Building App with CorePackage..."
 swiftc -o build/TMBMApp \
-    App/Sources/TMBMApp.swift \
-    App/Sources/main.swift \
+    $APP_FILES \
+    $CORE_FILES \
     -framework AppKit \
     -framework SwiftUI
 

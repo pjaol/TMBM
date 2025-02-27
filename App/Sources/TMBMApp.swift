@@ -50,36 +50,11 @@ struct ContentView: View {
     }
 }
 
-// Placeholder views
-struct BackupListView: View {
-    var body: some View {
-        Text("Backup List View")
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-}
-
-struct DiskUsageView: View {
-    var body: some View {
-        Text("Disk Usage View")
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-}
-
-struct SchedulingView: View {
-    var body: some View {
-        Text("Scheduling View")
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-}
-
-struct SettingsView: View {
-    var body: some View {
-        Text("Settings View")
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-}
-
 struct MenuBarView: View {
+    @State private var lastBackupDate: Date? = Date().addingTimeInterval(-3600) // Mock: 1 hour ago
+    @State private var nextBackupDate: Date? = Date().addingTimeInterval(3600) // Mock: 1 hour from now
+    @State private var diskUsage: Double = 75.0 // Mock: 75%
+    
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Time Machine Status")
@@ -87,9 +62,19 @@ struct MenuBarView: View {
             
             Divider()
             
-            Text("Last Backup: 1 hour ago")
-            Text("Next Backup: In 23 hours")
-            Text("Disk Usage: 75%")
+            if let lastDate = lastBackupDate {
+                Text("Last Backup: \(formatDate(lastDate))")
+            } else {
+                Text("Last Backup: Never")
+            }
+            
+            if let nextDate = nextBackupDate {
+                Text("Next Backup: \(formatDate(nextDate))")
+            } else {
+                Text("Next Backup: Not scheduled")
+            }
+            
+            Text("Disk Usage: \(Int(diskUsage))%")
             
             Divider()
             
@@ -103,5 +88,31 @@ struct MenuBarView: View {
         }
         .padding()
         .frame(width: 250)
+        .onAppear {
+            loadData()
+        }
+    }
+    
+    private func loadData() {
+        // In a real app, we would load this data from the TimeMachineService
+        // For now, we'll use mock data
+        let timeMachineService = TimeMachineService()
+        
+        do {
+            let status = try timeMachineService.getBackupStatus()
+            lastBackupDate = status.lastBackupDate
+            nextBackupDate = status.nextBackupDate
+            
+            let storageInfo = try timeMachineService.getDiskUsage()
+            diskUsage = storageInfo.usagePercentage
+        } catch {
+            print("Error loading data: \(error.localizedDescription)")
+        }
+    }
+    
+    private func formatDate(_ date: Date) -> String {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .abbreviated
+        return formatter.localizedString(for: date, relativeTo: Date())
     }
 } 
