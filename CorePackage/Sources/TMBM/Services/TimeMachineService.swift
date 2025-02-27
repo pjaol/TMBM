@@ -129,32 +129,59 @@ public class TimeMachineService: TimeMachineServiceProtocol {
         Logger.log("Listing backups", level: .info)
         
         do {
-            // Get the list of backups using tmutil with elevated privileges
+            // First check if tmutil exists
+            let whichOutput = try ShellCommandRunner.run("which tmutil")
+            Logger.log("tmutil path: \(whichOutput)", level: .debug)
+            
+            // Try running tmutil without sudo first to see the error
+            do {
+                let testOutput = try ShellCommandRunner.run("tmutil listbackups")
+                Logger.log("Direct tmutil output: \(testOutput)", level: .debug)
+            } catch {
+                Logger.log("Direct tmutil error: \(error)", level: .debug)
+            }
+            
+            // Now try with admin privileges
+            Logger.log("Attempting to run tmutil with admin privileges", level: .debug)
             let output = try ShellCommandRunner.runWithAdminPrivileges("tmutil listbackups")
+            Logger.log("tmutil output: \(output)", level: .debug)
             
             // Parse the output into backup items
             let paths = output.components(separatedBy: .newlines)
                 .filter { !$0.isEmpty }
             
+            Logger.log("Found \(paths.count) backup paths", level: .debug)
+            
             if paths.isEmpty {
+                Logger.log("No backup paths found", level: .warning)
                 throw TimeMachineServiceError.noBackupsFound
             }
             
             // Create backup items from paths
             return try paths.map { path -> BackupItem in
+                Logger.log("Processing backup path: \(path)", level: .debug)
+                
                 // Get backup info using stat with elevated privileges since backup paths might be protected
                 let statCommand = "stat -f '%Sm %z' -t '%Y-%m-%d %H:%M:%S' '\(path)'"
+                Logger.log("Running stat command: \(statCommand)", level: .debug)
+                
                 let statOutput = try ShellCommandRunner.runWithAdminPrivileges(statCommand)
+                Logger.log("Stat output: \(statOutput)", level: .debug)
+                
                 let components = statOutput.trimmingCharacters(in: .whitespacesAndNewlines).components(separatedBy: " ")
+                Logger.log("Stat components: \(components)", level: .debug)
                 
                 guard components.count >= 3,
                       let timestamp = Double(components[0] + " " + components[1]),
                       let size = Int64(components[2]) else {
+                    Logger.log("Failed to parse stat output", level: .error)
                     throw TimeMachineServiceError.commandExecutionFailed
                 }
                 
                 let date = Date(timeIntervalSince1970: timestamp)
                 let name = (path as NSString).lastPathComponent
+                
+                Logger.log("Created backup item: \(name) from \(date)", level: .debug)
                 
                 return BackupItem(
                     id: UUID(),
@@ -168,14 +195,17 @@ public class TimeMachineService: TimeMachineServiceProtocol {
             Logger.log("Failed to list backups: \(error)", level: .error)
             switch error {
             case .permissionDenied:
+                Logger.log("Permission denied when accessing Time Machine data", level: .error)
                 throw TimeMachineServiceError.permissionDenied
             case .commandNotFound:
+                Logger.log("tmutil command not found", level: .error)
                 throw TimeMachineServiceError.commandExecutionFailed
             case .commandExecutionFailed:
+                Logger.log("Command execution failed", level: .error)
                 throw TimeMachineServiceError.commandExecutionFailed
             }
         } catch {
-            Logger.log("Failed to list backups: \(error)", level: .error)
+            Logger.log("Unexpected error: \(error)", level: .error)
             throw error
         }
     }
