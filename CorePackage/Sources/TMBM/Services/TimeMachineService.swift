@@ -57,6 +57,7 @@ public enum TimeMachineServiceError: Error, Equatable {
     case sparsebundleResizeFailed
     case commandExecutionFailed
     case permissionDenied
+    case fullDiskAccessRequired
     
     /// A description of the error
     public var description: String {
@@ -83,6 +84,8 @@ public enum TimeMachineServiceError: Error, Equatable {
             return "Failed to execute the command"
         case .permissionDenied:
             return "Permission denied"
+        case .fullDiskAccessRequired:
+            return "Full Disk Access required. Please grant access in System Settings > Privacy & Security > Full Disk Access."
         }
     }
 }
@@ -138,7 +141,11 @@ public class TimeMachineService: TimeMachineServiceProtocol {
                 let testOutput = try ShellCommandRunner.run("tmutil listbackups")
                 Logger.log("Direct tmutil output: \(testOutput)", level: .debug)
             } catch {
-                Logger.log("Direct tmutil error: \(error)", level: .debug)
+                let errorString = String(describing: error)
+                Logger.log("Direct tmutil error: \(errorString)", level: .debug)
+                if errorString.contains("Full Disk Access") {
+                    throw TimeMachineServiceError.fullDiskAccessRequired
+                }
             }
             
             // Now try with admin privileges
@@ -196,7 +203,7 @@ public class TimeMachineService: TimeMachineServiceProtocol {
             switch error {
             case .permissionDenied:
                 Logger.log("Permission denied when accessing Time Machine data", level: .error)
-                throw TimeMachineServiceError.permissionDenied
+                throw TimeMachineServiceError.fullDiskAccessRequired
             case .commandNotFound:
                 Logger.log("tmutil command not found", level: .error)
                 throw TimeMachineServiceError.commandExecutionFailed

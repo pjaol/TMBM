@@ -102,6 +102,22 @@ struct BackupListView: View {
                         self.errorMessage = "No Time Machine backups found. Make sure Time Machine is configured and has completed at least one backup."
                     case .commandExecutionFailed:
                         self.errorMessage = "Failed to read backup data. Please ensure Time Machine is properly configured."
+                    case .fullDiskAccessRequired:
+                        self.errorMessage = """
+                            Full Disk Access Required
+
+                            To view Time Machine backups, this app needs Full Disk Access permission.
+
+                            1. Open System Settings
+                            2. Go to Privacy & Security > Full Disk Access
+                            3. Click the + button
+                            4. Navigate to Applications
+                            5. Select TMBMApp
+                            6. Click Open
+                            7. Enable the toggle next to TMBMApp
+
+                            After granting access, click Retry below.
+                            """
                     default:
                         self.errorMessage = error.description
                     }
