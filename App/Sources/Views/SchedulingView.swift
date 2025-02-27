@@ -1,10 +1,11 @@
 import SwiftUI
+import TMBM
 
 struct SchedulingView: View {
-    @State private var backupFrequency: BackupFrequency = .daily
+    @State private var selectedFrequency: AppPreferences.BackupFrequency = .daily
     @State private var isBackupPaused: Bool = false
-    @State private var nextBackupDate: Date? = Date().addingTimeInterval(3600) // Mock: 1 hour from now
-    @State private var lastBackupDate: Date? = Date().addingTimeInterval(-3600) // Mock: 1 hour ago
+    @State private var lastBackupDate: Date?
+    @State private var nextBackupDate: Date?
     @State private var isLoading: Bool = true
     @State private var errorMessage: String? = nil
     @State private var showingStartBackupConfirmation: Bool = false
@@ -12,181 +13,126 @@ struct SchedulingView: View {
     private let timeMachineService = TimeMachineService()
     
     var body: some View {
-        VStack {
+        VStack(spacing: 20) {
             if isLoading {
-                ProgressView("Loading scheduling information...")
+                ProgressView("Loading backup schedule...")
             } else if let error = errorMessage {
-                VStack {
-                    Text("Error loading scheduling information")
-                        .font(.headline)
-                        .foregroundColor(.red)
-                    Text(error)
-                        .foregroundColor(.secondary)
-                    Button("Retry") {
-                        loadSchedulingInfo()
-                    }
-                    .padding()
+                Text(error)
+                    .foregroundColor(.red)
+                Button("Retry") {
+                    loadBackupStatus()
                 }
             } else {
-                Form {
-                    Section(header: Text("Backup Status")) {
-                        HStack {
-                            Text("Last Backup:")
-                            Spacer()
-                            if let date = lastBackupDate {
-                                Text(formatDate(date))
-                            } else {
-                                Text("Never")
-                            }
-                        }
-                        
-                        HStack {
-                            Text("Next Backup:")
-                            Spacer()
-                            if isBackupPaused {
-                                Text("Paused")
-                                    .foregroundColor(.orange)
-                            } else if let date = nextBackupDate {
-                                Text(formatDate(date))
-                            } else {
-                                Text("Not scheduled")
-                                    .foregroundColor(.secondary)
-                            }
-                        }
+                // Backup Status
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Backup Status")
+                        .font(.headline)
+                    
+                    if let last = lastBackupDate {
+                        Text("Last backup: \(RelativeDateTimeFormatter().localizedString(for: last, relativeTo: Date()))")
+                    } else {
+                        Text("No previous backups found")
+                            .foregroundColor(.secondary)
                     }
                     
-                    Section(header: Text("Backup Schedule")) {
-                        Picker("Backup Frequency", selection: $backupFrequency) {
-                            Text("Hourly").tag(BackupFrequency.hourly)
-                            Text("Daily").tag(BackupFrequency.daily)
-                            Text("Weekly").tag(BackupFrequency.weekly)
-                            Text("Monthly").tag(BackupFrequency.monthly)
-                        }
-                        .pickerStyle(SegmentedPickerStyle())
-                        .onChange(of: backupFrequency) { oldValue, newValue in
-                            updateSchedule()
-                        }
-                        
-                        Toggle("Pause Backups", isOn: $isBackupPaused)
-                            .onChange(of: isBackupPaused) { oldValue, newValue in
-                                toggleBackupPause()
-                            }
-                    }
-                    
-                    Section {
-                        Button(action: {
-                            showingStartBackupConfirmation = true
-                        }) {
-                            HStack {
-                                Spacer()
-                                Label("Start Backup Now", systemImage: "arrow.clockwise.circle")
-                                Spacer()
-                            }
-                        }
-                        .alert(isPresented: $showingStartBackupConfirmation) {
-                            Alert(
-                                title: Text("Start Backup"),
-                                message: Text("Are you sure you want to start a backup now?"),
-                                primaryButton: .default(Text("Start")) {
-                                    startBackup()
-                                },
-                                secondaryButton: .cancel()
-                            )
-                        }
+                    if let next = nextBackupDate {
+                        Text("Next backup: \(RelativeDateTimeFormatter().localizedString(for: next, relativeTo: Date()))")
                     }
                 }
                 .padding()
+                .background(Color(.windowBackgroundColor))
+                .cornerRadius(8)
+                
+                // Schedule Controls
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Schedule Settings")
+                        .font(.headline)
+                    
+                    Picker("Backup Frequency", selection: $selectedFrequency) {
+                        Text("Hourly").tag(AppPreferences.BackupFrequency.hourly)
+                        Text("Daily").tag(AppPreferences.BackupFrequency.daily)
+                        Text("Weekly").tag(AppPreferences.BackupFrequency.weekly)
+                    }
+                    .pickerStyle(SegmentedPickerStyle())
+                    .disabled(isBackupPaused)
+                    
+                    Toggle("Pause Backups", isOn: $isBackupPaused)
+                        .onChange(of: isBackupPaused) { oldValue, newValue in
+                            updateBackupStatus(isPaused: newValue)
+                        }
+                }
+                .padding()
+                .background(Color(.windowBackgroundColor))
+                .cornerRadius(8)
+                
+                // Manual Controls
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Manual Controls")
+                        .font(.headline)
+                    
+                    Button("Start Backup Now") {
+                        showingStartBackupConfirmation = true
+                    }
+                    .disabled(isBackupPaused)
+                }
+                .padding()
+                .background(Color(.windowBackgroundColor))
+                .cornerRadius(8)
             }
         }
-        .navigationTitle("Scheduling")
+        .padding()
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .onAppear {
-            loadSchedulingInfo()
+            loadBackupStatus()
+        }
+        .alert("Start Backup", isPresented: $showingStartBackupConfirmation) {
+            Button("Cancel", role: .cancel) { }
+            Button("Start") {
+                startBackup()
+            }
+        } message: {
+            Text("Are you sure you want to start a backup now?")
         }
     }
     
-    private func loadSchedulingInfo() {
+    private func loadBackupStatus() {
         isLoading = true
         errorMessage = nil
         
-        DispatchQueue.global(qos: .userInitiated).async {
+        Task {
             do {
                 let status = try timeMachineService.getBackupStatus()
-                
-                DispatchQueue.main.async {
-                    self.lastBackupDate = status.lastBackupDate
-                    self.nextBackupDate = status.nextBackupDate
-                    // In a real app, we would load these from UserDefaults
-                    self.backupFrequency = .daily
-                    self.isBackupPaused = false
-                    self.isLoading = false
-                }
+                lastBackupDate = status.lastBackupDate
+                nextBackupDate = status.nextBackupDate
             } catch {
-                DispatchQueue.main.async {
-                    self.errorMessage = error.localizedDescription
-                    self.isLoading = false
-                }
+                errorMessage = "Failed to load backup status: \(error.localizedDescription)"
             }
+            isLoading = false
         }
     }
     
-    private func updateSchedule() {
-        // In a real app, we would update the system's backup schedule
-        // For now, we'll just update our local state
-        
-        // Update the next backup date based on the frequency
-        if !isBackupPaused {
-            updateNextBackupDate()
-        }
-    }
-    
-    private func toggleBackupPause() {
-        // In a real app, we would pause/resume the system's backup schedule
-        // For now, we'll just update our local state
-        
-        if isBackupPaused {
-            nextBackupDate = nil
-        } else {
-            updateNextBackupDate()
-        }
-    }
-    
-    private func updateNextBackupDate() {
-        // Calculate the next backup date based on the frequency
-        let now = Date()
-        switch backupFrequency {
-        case .hourly:
-            nextBackupDate = now.addingTimeInterval(3600) // 1 hour
-        case .daily:
-            nextBackupDate = now.addingTimeInterval(86400) // 24 hours
-        case .weekly:
-            nextBackupDate = now.addingTimeInterval(604800) // 7 days
-        case .monthly:
-            nextBackupDate = now.addingTimeInterval(2592000) // 30 days
+    private func updateBackupStatus(isPaused: Bool) {
+        Task {
+            do {
+                if isPaused {
+                    try timeMachineService.stopBackup()
+                }
+                loadBackupStatus()
+            } catch {
+                errorMessage = "Failed to update backup status: \(error.localizedDescription)"
+            }
         }
     }
     
     private func startBackup() {
-        DispatchQueue.global(qos: .userInitiated).async {
+        Task {
             do {
                 try timeMachineService.startBackup()
-                DispatchQueue.main.async {
-                    // Update the last backup date
-                    self.lastBackupDate = Date()
-                    // Update the next backup date
-                    self.updateNextBackupDate()
-                }
+                loadBackupStatus()
             } catch {
-                DispatchQueue.main.async {
-                    self.errorMessage = "Failed to start backup: \(error.localizedDescription)"
-                }
+                errorMessage = "Failed to start backup: \(error.localizedDescription)"
             }
         }
-    }
-    
-    private func formatDate(_ date: Date) -> String {
-        let formatter = RelativeDateTimeFormatter()
-        formatter.unitsStyle = .full
-        return formatter.localizedString(for: date, relativeTo: Date())
     }
 }
 

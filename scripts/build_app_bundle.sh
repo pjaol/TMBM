@@ -18,21 +18,7 @@ mkdir -p "$CORE_MODULE_PATH"
 # Find all Swift files in the CorePackage except main.swift
 CORE_FILES=$(find CorePackage/Sources -name "*.swift" | grep -v "main.swift" | tr '\n' ' ')
 
-# Compile the Core Package as a module
-swiftc -module-name TMBM \
-    -emit-module \
-    -emit-library \
-    -module-link-name TMBM \
-    -parse-as-library \
-    -o "$CORE_MODULE_PATH/libTMBM.dylib" \
-    $CORE_FILES
-
-if [ $? -ne 0 ]; then
-    echo "Core Package build failed. Please check the errors above."
-    exit 1
-fi
-
-# Create the app bundle structure
+# Create the app bundle structure first (we need the paths for install_name)
 APP_BUNDLE="build/TMBMApp.app"
 APP_CONTENTS="$APP_BUNDLE/Contents"
 APP_MACOS="$APP_CONTENTS/MacOS"
@@ -44,14 +30,35 @@ mkdir -p "$APP_MACOS"
 mkdir -p "$APP_RESOURCES"
 mkdir -p "$APP_FRAMEWORKS"
 
-# Copy the Core Package module and library
+# Compile the Core Package as a module with the correct install name
+echo "Building Core Package module..."
+swiftc -module-name TMBM \
+    -emit-module \
+    -emit-library \
+    -module-link-name TMBM \
+    -parse-as-library \
+    -target arm64-apple-macosx13.0 \
+    -Xlinker -install_name -Xlinker @rpath/libTMBM.dylib \
+    -o "$CORE_MODULE_PATH/libTMBM.dylib" \
+    $CORE_FILES
+
+if [ $? -ne 0 ]; then
+    echo "Core Package build failed. Please check the errors above."
+    exit 1
+fi
+
+# Copy the Core Package module and library to the Frameworks directory
 cp "$CORE_MODULE_PATH/libTMBM.dylib" "$APP_FRAMEWORKS/"
-cp "$CORE_MODULE_PATH/TMBM.swiftmodule"* "$APP_FRAMEWORKS/" 2>/dev/null || true
+
+# Create module directory structure
+rm -rf "$APP_FRAMEWORKS/TMBM.swiftmodule"
+mkdir -p "$APP_FRAMEWORKS/TMBM.swiftmodule"
+cp -f "$CORE_MODULE_PATH"/TMBM.swiftmodule/* "$APP_FRAMEWORKS/TMBM.swiftmodule/" 2>/dev/null || true
 
 # Find all Swift files in the App
 APP_FILES=$(find App/Sources -name "*.swift" | tr '\n' ' ')
 
-# Compile the app with the Core Package module
+# Compile the app with the Core Package module and correct rpath
 echo "Building App with CorePackage..."
 swiftc -o "$APP_MACOS/TMBMApp" \
     $APP_FILES \
@@ -59,7 +66,8 @@ swiftc -o "$APP_MACOS/TMBMApp" \
     -L "$CORE_MODULE_PATH" \
     -lTMBM \
     -framework AppKit \
-    -framework SwiftUI
+    -framework SwiftUI \
+    -Xlinker -rpath -Xlinker @executable_path/../Frameworks
 
 # Check if compilation was successful
 if [ $? -ne 0 ]; then
@@ -96,16 +104,22 @@ cat > "$APP_CONTENTS/Info.plist" << EOF
     <key>NSHighResolutionCapable</key>
     <true/>
     <key>LSUIElement</key>
+    <false/>
+    <key>NSSupportsAutomaticTermination</key>
     <true/>
+    <key>NSSupportsSuddenTermination</key>
+    <false/>
+    <key>NSRequiresAquaSystemAppearance</key>
+    <false/>
 </dict>
 </plist>
 EOF
 
-# Copy resources if any
-# cp -R App/Resources/* "$APP_RESOURCES/"
-
 echo "Build successful! App bundle created at: $APP_BUNDLE"
 echo "You can now open the app with: open $APP_BUNDLE"
+
+# Clean up build artifacts
+rm -rf "$CORE_MODULE_PATH"
 
 # Open the app
 open "$APP_BUNDLE" 

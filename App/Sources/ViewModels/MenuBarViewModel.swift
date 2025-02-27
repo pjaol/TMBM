@@ -17,7 +17,9 @@ class MenuBarViewModel: ObservableObject {
     init() {
         self.timeMachineService = TimeMachineService()
         startUpdateTimer()
-        updateStatus()
+        Task {
+            await updateStatus()
+        }
     }
     
     deinit {
@@ -27,25 +29,25 @@ class MenuBarViewModel: ObservableObject {
     private func startUpdateTimer() {
         // Update status every 30 seconds
         updateTimer = Timer.scheduledTimer(withTimeInterval: 30.0, repeats: true) { [weak self] _ in
-            self?.updateStatus()
+            Task { @MainActor in
+                await self?.updateStatus()
+            }
         }
     }
     
-    func updateStatus() {
-        Task {
-            do {
-                let status = try timeMachineService.getBackupStatus()
-                isBackupRunning = status.isRunning
-                lastBackupDate = status.lastBackupDate
-                nextBackupDate = status.nextBackupDate
-                
-                let diskUsage = try timeMachineService.getDiskUsage()
-                storageInfo = diskUsage
-                
-                updateStatusDisplay()
-            } catch {
-                Logger.log("Failed to update menu bar status: \(error.localizedDescription)", level: .error)
-            }
+    func updateStatus() async {
+        do {
+            let status = try timeMachineService.getBackupStatus()
+            isBackupRunning = status.isRunning
+            lastBackupDate = status.lastBackupDate
+            nextBackupDate = status.nextBackupDate
+            
+            let diskUsage = try timeMachineService.getDiskUsage()
+            storageInfo = diskUsage
+            
+            updateStatusDisplay()
+        } catch {
+            Logger.log("Failed to update menu bar status: \(error.localizedDescription)", level: .error)
         }
     }
     
@@ -78,7 +80,7 @@ class MenuBarViewModel: ObservableObject {
         Task {
             do {
                 try timeMachineService.startBackup()
-                updateStatus()
+                await updateStatus()
             } catch {
                 Logger.log("Failed to start backup: \(error.localizedDescription)", level: .error)
             }
@@ -89,7 +91,7 @@ class MenuBarViewModel: ObservableObject {
         Task {
             do {
                 try timeMachineService.stopBackup()
-                updateStatus()
+                await updateStatus()
             } catch {
                 Logger.log("Failed to stop backup: \(error.localizedDescription)", level: .error)
             }

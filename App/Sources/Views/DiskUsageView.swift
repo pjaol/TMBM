@@ -1,4 +1,5 @@
 import SwiftUI
+import TMBM
 
 struct DiskUsageView: View {
     @State private var storageInfo: StorageInfo? = nil
@@ -12,95 +13,57 @@ struct DiskUsageView: View {
             if isLoading {
                 ProgressView("Loading disk usage...")
             } else if let error = errorMessage {
-                VStack {
-                    Text("Error loading disk usage")
-                        .font(.headline)
-                        .foregroundColor(.red)
-                    Text(error)
-                        .foregroundColor(.secondary)
-                    Button("Retry") {
-                        loadDiskUsage()
-                    }
-                    .padding()
+                Text(error)
+                    .foregroundColor(.red)
+                Button("Retry") {
+                    loadDiskUsage()
                 }
             } else if let info = storageInfo {
                 VStack(spacing: 20) {
-                    Text("Time Machine Backup Disk")
+                    Text("Backup Disk Usage")
                         .font(.headline)
                     
-                    HStack {
-                        Text("Total Space:")
-                        Spacer()
-                        Text(info.formattedTotalSpace)
-                            .bold()
-                    }
-                    
-                    HStack {
-                        Text("Used Space:")
-                        Spacer()
-                        Text(info.formattedUsedSpace)
-                            .bold()
-                    }
-                    
-                    HStack {
-                        Text("Available Space:")
-                        Spacer()
-                        Text(info.formattedAvailableSpace)
-                            .bold()
-                    }
-                    
-                    // Usage bar
-                    VStack(alignment: .leading) {
-                        Text("Disk Usage: \(Int(info.usagePercentage))%")
-                            .font(.subheadline)
+                    VStack(alignment: .leading, spacing: 10) {
+                        ProgressView(value: info.usagePercentage, total: 100) {
+                            Text(info.formattedUsagePercentage)
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                        .tint(info.usagePercentage >= 90 ? .red :
+                              info.usagePercentage >= 75 ? .yellow : .blue)
                         
-                        GeometryReader { geometry in
-                            ZStack(alignment: .leading) {
-                                Rectangle()
-                                    .frame(width: geometry.size.width, height: 20)
-                                    .opacity(0.3)
-                                    .foregroundColor(.gray)
-                                
-                                Rectangle()
-                                    .frame(width: min(CGFloat(info.usagePercentage) / 100.0 * geometry.size.width, geometry.size.width), height: 20)
-                                    .foregroundColor(usageColor(percentage: info.usagePercentage))
-                            }
-                            .cornerRadius(10)
-                        }
-                        .frame(height: 20)
-                    }
-                    
-                    if info.usagePercentage > 80 {
                         HStack {
-                            Image(systemName: "exclamationmark.triangle.fill")
-                                .foregroundColor(.orange)
-                            Text("Disk space is running low. Consider deleting old backups.")
-                                .foregroundColor(.orange)
+                            VStack(alignment: .leading) {
+                                Text("Used Space")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                Text(info.formattedUsedSpace)
+                                    .font(.title2)
+                            }
+                            
+                            Spacer()
+                            
+                            VStack(alignment: .trailing) {
+                                Text("Available Space")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                Text(info.formattedAvailableSpace)
+                                    .font(.title2)
+                            }
                         }
-                        .padding()
-                        .background(Color.orange.opacity(0.1))
-                        .cornerRadius(8)
+                        
+                        Text("Total Space: \(info.formattedTotalSpace)")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
                     }
-                    
-                    Spacer()
+                    .padding()
+                    .background(Color(.windowBackgroundColor))
+                    .cornerRadius(8)
                 }
                 .padding()
-                .frame(maxWidth: .infinity)
-            } else {
-                Text("No disk usage information available")
-                    .font(.headline)
             }
         }
-        .navigationTitle("Disk Usage")
-        .toolbar {
-            ToolbarItem(placement: .automatic) {
-                Button(action: {
-                    loadDiskUsage()
-                }) {
-                    Label("Refresh", systemImage: "arrow.clockwise")
-                }
-            }
-        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .onAppear {
             loadDiskUsage()
         }
@@ -110,30 +73,13 @@ struct DiskUsageView: View {
         isLoading = true
         errorMessage = nil
         
-        DispatchQueue.global(qos: .userInitiated).async {
+        Task {
             do {
-                let info = try timeMachineService.getDiskUsage()
-                DispatchQueue.main.async {
-                    self.storageInfo = info
-                    self.isLoading = false
-                }
+                storageInfo = try timeMachineService.getDiskUsage()
             } catch {
-                DispatchQueue.main.async {
-                    self.errorMessage = error.localizedDescription
-                    self.isLoading = false
-                }
+                errorMessage = "Failed to load disk usage: \(error.localizedDescription)"
             }
-        }
-    }
-    
-    private func usageColor(percentage: Double) -> Color {
-        switch percentage {
-        case 0..<50:
-            return .green
-        case 50..<80:
-            return .yellow
-        default:
-            return .red
+            isLoading = false
         }
     }
 } 
