@@ -28,15 +28,29 @@ To build and run the application, use the provided script:
 ```
 
 This script will:
-1. Build the core package
-2. Build and run the macOS application
+1. Build the app bundle if it doesn't exist
+2. Open the app as a standalone macOS application
+
+### Building the App Bundle
+
+To build a proper macOS application bundle:
+
+```bash
+./scripts/build_app_bundle.sh
+```
+
+This creates a standalone `.app` bundle in the `build` directory that can be:
+- Opened directly from Finder
+- Added to your Applications folder
+- Launched independently from the terminal
 
 ### Individual Build Scripts
 
 You can also use the individual scripts for more specific tasks:
 
 - **Build Core Package**: `./scripts/build_core.sh`
-- **Build and Run App**: `./scripts/build_app.sh`
+- **Build App Executable**: `./scripts/build_app.sh`
+- **Build App Bundle**: `./scripts/build_app_bundle.sh`
 - **Open App in Xcode**: `./scripts/open_app.sh`
 - **Update Project Structure**: `./scripts/update_project.sh`
 - **Clean Up Project**: `./scripts/cleanup_project.sh`
@@ -60,6 +74,7 @@ You can also use the individual scripts for more specific tasks:
 1. Make changes to the core package or app code
 2. Build and test using the provided scripts
 3. Open in Xcode for more detailed development using `./scripts/open_app.sh`
+4. Build a proper app bundle using `./scripts/build_app_bundle.sh` when ready to test the standalone application
 
 ### Source Control
 
