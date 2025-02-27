@@ -1,21 +1,23 @@
 import SwiftUI
 import AppKit
+import TMBM
 
-// The @main attribute is removed as we're using main.swift as the entry point
 @available(macOS 13.0, *)
 struct TMBMApp: App {
+    @StateObject private var menuBarViewModel = MenuBarViewModel()
+    
     var body: some Scene {
         WindowGroup {
             ContentView()
         }
+        .windowStyle(.hiddenTitleBar)
+        .windowResizability(.contentSize)
         
-        #if os(macOS)
-        // Add menu bar extra
-        MenuBarExtra("TMBM", systemImage: "clock.arrow.circlepath") {
+        MenuBarExtra(title: "TMBM", systemImage: menuBarViewModel.statusImage) {
             MenuBarView()
         }
         .menuBarExtraStyle(.window)
-        #endif
+        .menuBarExtraAccess(isPresented: .constant(true))
     }
 }
 
