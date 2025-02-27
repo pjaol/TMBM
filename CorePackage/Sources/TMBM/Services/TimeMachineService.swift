@@ -128,10 +128,45 @@ public class TimeMachineService: TimeMachineServiceProtocol {
     public func listBackups() throws -> [BackupItem] {
         Logger.log("Listing backups", level: .info)
         
-        // In a real implementation, we would use tmutil listbackups to get the list of backups
-        // For now, we'll return mock data
-        
-        return BackupItem.mockBackupItems()
+        do {
+            // Get the list of backups using tmutil
+            let output = try ShellCommandRunner.run("tmutil", arguments: ["listbackups"])
+            
+            // Parse the output into backup items
+            let paths = output.components(separatedBy: .newlines)
+                .filter { !$0.isEmpty }
+            
+            if paths.isEmpty {
+                throw TimeMachineServiceError.noBackupsFound
+            }
+            
+            // Create backup items from paths
+            return try paths.map { path -> BackupItem in
+                // Get backup info using stat
+                let statOutput = try ShellCommandRunner.run("stat", arguments: ["-f", "%Sm %z", "-t", "%Y-%m-%d %H:%M:%S", path])
+                let components = statOutput.trimmingCharacters(in: .whitespacesAndNewlines).components(separatedBy: " ")
+                
+                guard components.count >= 3,
+                      let timestamp = Double(components[0] + " " + components[1]),
+                      let size = Int64(components[2]) else {
+                    throw TimeMachineServiceError.commandExecutionFailed
+                }
+                
+                let date = Date(timeIntervalSince1970: timestamp)
+                let name = (path as NSString).lastPathComponent
+                
+                return BackupItem(
+                    id: UUID(),
+                    name: name,
+                    path: path,
+                    date: date,
+                    size: size
+                )
+            }
+        } catch {
+            Logger.log("Failed to list backups: \(error)", level: .error)
+            throw error
+        }
     }
     
     /// Deletes a specific backup

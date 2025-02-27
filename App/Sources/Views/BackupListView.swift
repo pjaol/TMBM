@@ -76,16 +76,40 @@ struct BackupListView: View {
         isLoading = true
         errorMessage = nil
         
-        DispatchQueue.global(qos: .userInitiated).async {
+        Task {
             do {
-                let loadedBackups = try timeMachineService.listBackups()
-                DispatchQueue.main.async {
-                    self.backups = loadedBackups
+                let loadedBackups = try await withCheckedThrowingContinuation { continuation in
+                    DispatchQueue.global(qos: .userInitiated).async {
+                        do {
+                            let backups = try self.timeMachineService.listBackups()
+                            continuation.resume(returning: backups)
+                        } catch {
+                            continuation.resume(throwing: error)
+                        }
+                    }
+                }
+                
+                await MainActor.run {
+                    self.backups = loadedBackups.sorted { $0.date > $1.date }
+                    self.isLoading = false
+                }
+            } catch let error as TimeMachineServiceError {
+                await MainActor.run {
+                    switch error {
+                    case .permissionDenied:
+                        self.errorMessage = "Permission denied. Please grant access to Time Machine data in System Settings."
+                    case .noBackupsFound:
+                        self.errorMessage = "No Time Machine backups found. Make sure Time Machine is configured and has completed at least one backup."
+                    case .commandExecutionFailed:
+                        self.errorMessage = "Failed to read backup data. Please ensure Time Machine is properly configured."
+                    default:
+                        self.errorMessage = error.description
+                    }
                     self.isLoading = false
                 }
             } catch {
-                DispatchQueue.main.async {
-                    self.errorMessage = error.localizedDescription
+                await MainActor.run {
+                    self.errorMessage = "An unexpected error occurred: \(error.localizedDescription)"
                     self.isLoading = false
                 }
             }
@@ -93,18 +117,39 @@ struct BackupListView: View {
     }
     
     private func deleteBackup(_ backup: BackupItem) {
-        DispatchQueue.global(qos: .userInitiated).async {
+        Task {
             do {
-                try timeMachineService.deleteBackup(path: backup.path)
-                DispatchQueue.main.async {
+                try await withCheckedThrowingContinuation { continuation in
+                    DispatchQueue.global(qos: .userInitiated).async {
+                        do {
+                            try self.timeMachineService.deleteBackup(path: backup.path)
+                            continuation.resume()
+                        } catch {
+                            continuation.resume(throwing: error)
+                        }
+                    }
+                }
+                
+                await MainActor.run {
                     // Remove the backup from the list
                     if let index = backups.firstIndex(where: { $0.id == backup.id }) {
                         backups.remove(at: index)
                     }
                 }
+            } catch let error as TimeMachineServiceError {
+                await MainActor.run {
+                    switch error {
+                    case .permissionDenied:
+                        self.errorMessage = "Permission denied. Please grant access to delete Time Machine backups."
+                    case .backupDeletionFailed:
+                        self.errorMessage = "Failed to delete the backup. Please ensure you have the necessary permissions."
+                    default:
+                        self.errorMessage = error.description
+                    }
+                }
             } catch {
-                DispatchQueue.main.async {
-                    errorMessage = "Failed to delete backup: \(error.localizedDescription)"
+                await MainActor.run {
+                    self.errorMessage = "An unexpected error occurred while deleting the backup: \(error.localizedDescription)"
                 }
             }
         }
