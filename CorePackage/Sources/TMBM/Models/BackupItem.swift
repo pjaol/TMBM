@@ -1,7 +1,7 @@
 import Foundation
 
 /// Model for representing a Time Machine backup
-public struct BackupItem: Identifiable {
+public struct BackupItem: Identifiable, Sendable {
     /// Unique identifier for the backup
     public let id: UUID
     
@@ -19,12 +19,18 @@ public struct BackupItem: Identifiable {
     
     /// Formatted size of the backup
     public var formattedSize: String {
-        ByteCountFormatter.string(fromByteCount: size, countStyle: .file)
+        let formatter = ByteCountFormatter()
+        formatter.allowedUnits = [.useAll]
+        formatter.countStyle = .file
+        return formatter.string(fromByteCount: size)
     }
     
     /// Formatted date of the backup
     public var formattedDate: String {
-        DateFormatter.localizedString(from: date, dateStyle: .medium, timeStyle: .short)
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .short
+        return formatter.string(from: date)
     }
     
     /// Initializes a new instance of BackupItem
