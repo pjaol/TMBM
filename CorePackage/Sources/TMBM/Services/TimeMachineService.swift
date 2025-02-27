@@ -129,8 +129,8 @@ public class TimeMachineService: TimeMachineServiceProtocol {
         Logger.log("Listing backups", level: .info)
         
         do {
-            // Get the list of backups using tmutil
-            let output = try ShellCommandRunner.run("tmutil", arguments: ["listbackups"])
+            // Get the list of backups using tmutil with elevated privileges
+            let output = try ShellCommandRunner.runWithAdminPrivileges("tmutil listbackups")
             
             // Parse the output into backup items
             let paths = output.components(separatedBy: .newlines)
@@ -142,8 +142,9 @@ public class TimeMachineService: TimeMachineServiceProtocol {
             
             // Create backup items from paths
             return try paths.map { path -> BackupItem in
-                // Get backup info using stat
-                let statOutput = try ShellCommandRunner.run("stat", arguments: ["-f", "%Sm %z", "-t", "%Y-%m-%d %H:%M:%S", path])
+                // Get backup info using stat with elevated privileges since backup paths might be protected
+                let statCommand = "stat -f '%Sm %z' -t '%Y-%m-%d %H:%M:%S' '\(path)'"
+                let statOutput = try ShellCommandRunner.runWithAdminPrivileges(statCommand)
                 let components = statOutput.trimmingCharacters(in: .whitespacesAndNewlines).components(separatedBy: " ")
                 
                 guard components.count >= 3,
@@ -162,6 +163,16 @@ public class TimeMachineService: TimeMachineServiceProtocol {
                     date: date,
                     size: size
                 )
+            }
+        } catch let error as ShellCommandError {
+            Logger.log("Failed to list backups: \(error)", level: .error)
+            switch error {
+            case .permissionDenied:
+                throw TimeMachineServiceError.permissionDenied
+            case .commandNotFound:
+                throw TimeMachineServiceError.commandExecutionFailed
+            case .commandExecutionFailed:
+                throw TimeMachineServiceError.commandExecutionFailed
             }
         } catch {
             Logger.log("Failed to list backups: \(error)", level: .error)
