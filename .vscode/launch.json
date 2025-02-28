@@ -17,6 +17,24 @@
             "name": "Release TMBM",
             "program": "${workspaceFolder:tmbm}/.build/release/TMBM",
             "preLaunchTask": "swift: Build Release TMBM"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:tmbm}/CorePackage",
+            "name": "Debug TMBM (CorePackage)",
+            "program": "${workspaceFolder:tmbm}/CorePackage/.build/debug/TMBM",
+            "preLaunchTask": "swift: Build Debug TMBM (CorePackage)"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:tmbm}/CorePackage",
+            "name": "Release TMBM (CorePackage)",
+            "program": "${workspaceFolder:tmbm}/CorePackage/.build/release/TMBM",
+            "preLaunchTask": "swift: Build Release TMBM (CorePackage)"
         }
     ]
 }
