@@ -103,6 +103,10 @@ iOSInjectionProject/
 .env.*
 logs/
 tmp/
+CheckMDLS.swift
+FinderSize.scpt
+ShowAttributes.swift
+tmutil.txt
 
 # macOS specific
 .DS_Store
