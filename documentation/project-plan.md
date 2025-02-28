@@ -35,7 +35,7 @@ Below is a **sample Agile project plan** that breaks down the **requirements** (
 
 | **Story** | **Description**                                                                                        | **Acceptance Criteria**                                                                                                                        | **Points** | **Status** |
 |-----------|--------------------------------------------------------------------------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------|-----------|------------|
-| 7         | **Real-time "List Backups"**: Integrate with `tmutil listbackups` (or direct FS parsing) for actual data. | - UI table shows correct list of backups (date/time, size if available) - Fetch is triggered on app launch or user refresh                     | 1         | In Progress |
+| 7         | **Real-time "List Backups"**: Integrate with `tmutil listbackups` (or direct FS parsing) for actual data. | - UI table shows correct list of backups (date/time, size if available) - Fetch is triggered on app launch or user refresh                     | 1         | Completed |
 | 8         | **Implement Manual Deletion**: Hook `deleteBackup()` to UI to remove old backups.                       | - User can select a backup entry, click "Delete" - Confirmation dialog and final success/fail feedback shown                                   | 1         | Not Started |
 | 9         | **Disk Usage Overview**: Show total/used capacity of the backup drive(s).                              | - Display updated usage info in UI (e.g., progress bar or numeric) - Reflect changes after deletions                                           | 1         | In Progress |
 | 10        | **SchedulingService**: Basic scheduling for backups (hourly/daily/weekly) + "Pause Backups."           | - User can select frequency in Preferences - "Pause" toggles on/off actual scheduling - Visual indicator for next scheduled backup             | 1         | In Progress |
@@ -43,7 +43,7 @@ Below is a **sample Agile project plan** that breaks down the **requirements** (
 | 12        | **Menu Bar Updates**: Show last backup time, next backup time, and a button to open the main UI.       | - Clicking on menu bar icon: pop-up with "Last Backup: X min ago," "Next Backup: X" - Button "Open Backup Manager" is functional               | 1         | Completed |
 | 13        | **Basic Unit Testing** of Services**: TimeMachineService, SchedulingService.                           | - At least 1 test per method (listBackups, deleteBackup, schedule triggers) - Tests run in CI successfully                                     | 1         | Not Started |
 
-**Sprint 2 Total**: 1/7 story points completed, 4 in progress, 2 not started
+**Sprint 2 Total**: 2/7 story points completed, 3 in progress, 2 not started
 
 ---
 
@@ -100,12 +100,12 @@ Based on the current state of the project, we've identified additional tasks tha
 ## Summary of Progress
 
 - **Sprint 1**: 5/6 points completed (83% complete)
-- **Sprint 2**: 1/7 points completed, 4 in progress, 2 not started (14% complete, 57% in progress)
+- **Sprint 2**: 2/7 points completed, 3 in progress, 2 not started (29% complete, 43% in progress)
 - **Sprint 3**: 2/6 points completed, 3 in progress, 1 not started (33% complete, 50% in progress)
 - **Sprint 4**: 3/5 points completed, 2 in progress (60% complete, 40% in progress)
 - **New Tasks**: 8/8 points completed (100% complete)
 
-**Total Progress**: 19/32 story points completed (59%), 9 in progress (28%), 4 not started (13%)
+**Total Progress**: 20/32 story points completed (63%), 8 in progress (25%), 4 not started (12%)
 
 ---
 
@@ -127,3 +127,31 @@ The project is making excellent progress, with most of the planned features alre
 3. Conduct final testing and QA
 
 The project is in good shape, with the core functionality fully implemented, the project structure cleaned up, and source control properly configured. The app now builds as a proper macOS application bundle that can be launched independently from the terminal. The remaining work is focused on ensuring the app is stable, accessible, and ready for release.
+
+---
+
+## Recent Improvements
+
+### Backup Size Calculation and Display
+
+We've made significant improvements to the backup size calculation and display functionality:
+
+1. **Enhanced Size Calculation**: 
+   - Implemented support for reading backup sizes directly from the `com.apple.TimeMachine.Results.plist` file
+   - Added fallback mechanisms to ensure size calculation is reliable
+   - Improved caching to reduce unnecessary calculations while ensuring UI updates
+
+2. **UI Responsiveness**:
+   - Converted `BackupItem` from a struct to an `ObservableObject` class to better support UI updates
+   - Ensured proper propagation of size updates to the UI
+   - Fixed issues with the "Calculating..." display not updating properly
+
+3. **Code Quality**:
+   - Added comprehensive logging for better debugging
+   - Improved error handling throughout the size calculation process
+   - Fixed Sendable conformance warnings in the `BackupItem` class
+   - Addressed unused task variable warning in `BackupListView`
+
+These improvements have significantly enhanced the user experience by ensuring that backup sizes are calculated accurately and displayed promptly in the UI.
+
+---
