@@ -409,6 +409,7 @@ public enum TimeMachineServiceError: Error, Equatable {
     case commandExecutionFailed
     case permissionDenied
     case fullDiskAccessRequired
+    case noBackupDestinationConfigured
     
     /// A description of the error
     public var description: String {
@@ -437,6 +438,8 @@ public enum TimeMachineServiceError: Error, Equatable {
             return "Permission denied"
         case .fullDiskAccessRequired:
             return "Full Disk Access required. Please grant access in System Settings > Privacy & Security > Full Disk Access."
+        case .noBackupDestinationConfigured:
+            return "No backup destination configured"
         }
     }
 }
@@ -491,16 +494,262 @@ public class TimeMachineService: TimeMachineServiceProtocol, ObservableObject {
             return cachedInfo
         }
         
-        // In a real implementation, we would use df or diskutil to get the disk usage
-        // For now, we'll return mock data with current timestamp
-        let info = StorageInfo.mockStorageInfo()
+        // Get real disk usage information
+        do {
+            // First check if Time Machine is configured by checking destination info
+            let destinationInfo = try ShellCommandRunner.run("/usr/bin/tmutil", arguments: ["destinationinfo"])
+            logInfo("Destination info: \(destinationInfo)")
+            
+            if destinationInfo.contains("No destinations configured") {
+                throw TimeMachineServiceError.noBackupDestinationConfigured
+            }
+            
+            // Get the backup directory path from destinationinfo
+            let mountPoint = try getMountPointFromDestinationInfo(destinationInfo)
+            logInfo("Mount point: \(mountPoint)")
+            
+            // Get disk usage information using df
+            let dfOutput = try ShellCommandRunner.run("df", arguments: ["-k", mountPoint])
+            logInfo("df output: \(dfOutput)")
+            
+            // Parse the df output to get disk usage information
+            var info = try parseDiskUsageInfo(dfOutput)
+            
+            // Calculate the total size of all backups
+            let backupSize = try calculateTotalBackupSize(mountPoint: mountPoint)
+            
+            // Create a new StorageInfo with the backup size
+            info = StorageInfo(
+                totalSpace: info.totalSpace,
+                usedSpace: info.usedSpace,
+                backupSpace: backupSize,
+                timestamp: info.timestamp
+            )
+            
+            logInfo("Total backup size: \(backupSize) bytes (\(info.formattedBackupSpace))")
+            logInfo("Backup percentage of total: \(info.formattedBackupPercentage)")
+            logInfo("Backup percentage of used: \(info.formattedBackupOfUsedPercentage)")
+            
+            // Update the cached storage info
+            DispatchQueue.main.async {
+                self.storageInfo = info
+            }
+            
+            return info
+        } catch let error as ShellCommandError {
+            logError("Shell command error: \(error.description)")
+            
+            // Map shell command errors to TimeMachineServiceError
+            switch error {
+            case .permissionDenied:
+                throw TimeMachineServiceError.permissionDenied
+            case .commandNotFound:
+                throw TimeMachineServiceError.commandExecutionFailed
+            case .commandExecutionFailed:
+                throw TimeMachineServiceError.commandExecutionFailed
+            }
+        } catch {
+            logError("Failed to get disk usage: \(error)")
+            
+            // If we have cached info, return it even if it's old
+            if let cachedInfo = storageInfo {
+                logInfo("Using old cached disk usage info due to error")
+                return cachedInfo
+            }
+            
+            throw error
+        }
+    }
+    
+    /// Parse the output of df command to get disk usage information
+    /// - Parameter output: The output of df command
+    /// - Returns: Storage information
+    /// - Throws: An error if parsing fails
+    private func parseDiskUsageInfo(_ output: String) throws -> StorageInfo {
+        let lines = output.components(separatedBy: .newlines)
         
-        // Update the published property
-        DispatchQueue.main.async {
-            self.storageInfo = info
+        // Skip the header line and get the data line
+        guard lines.count >= 2, let dataLine = lines.dropFirst().first else {
+            logError("Invalid df output format: \(output)")
+            throw TimeMachineServiceError.diskInfoUnavailable
         }
         
-        return info
+        // Split the data line by whitespace
+        let components = dataLine.components(separatedBy: .whitespaces)
+            .filter { !$0.isEmpty }
+        
+        // df -k output format: Filesystem 1K-blocks Used Available Capacity iused ifree %iused Mounted on
+        // We need columns 2 (total), 3 (used), and 4 (available)
+        guard components.count >= 5 else {
+            logError("Invalid df output format, not enough columns: \(dataLine)")
+            throw TimeMachineServiceError.diskInfoUnavailable
+        }
+        
+        // Parse the values (convert from KB to bytes)
+        guard let totalBlocks = Int64(components[1]) else {
+            logError("Invalid total blocks value: \(components[1])")
+            throw TimeMachineServiceError.diskInfoUnavailable
+        }
+        
+        guard let usedBlocks = Int64(components[2]) else {
+            logError("Invalid used blocks value: \(components[2])")
+            throw TimeMachineServiceError.diskInfoUnavailable
+        }
+        
+        // Convert from 1K blocks to bytes
+        let totalSpace = totalBlocks * 1024
+        let usedSpace = usedBlocks * 1024
+        
+        logInfo("Parsed disk usage: total=\(totalSpace), used=\(usedSpace)")
+        
+        return StorageInfo(totalSpace: totalSpace, usedSpace: usedSpace)
+    }
+    
+    /// Calculate the total size of all backups in the given mount point
+    /// - Parameter mountPoint: The mount point of the backup disk
+    /// - Returns: The total size of all backups in bytes
+    /// - Throws: An error if the operation fails
+    private func calculateTotalBackupSize(mountPoint: String) throws -> Int64 {
+        logInfo("Calculating total backup size for mount point: \(mountPoint)")
+        
+        let fileManager = FileManager.default
+        
+        // Check if the directory exists
+        guard fileManager.fileExists(atPath: mountPoint) else {
+            logInfo("Backup directory does not exist: \(mountPoint)")
+            return 0
+        }
+        
+        do {
+            // List all backup directories
+            let contents = try fileManager.contentsOfDirectory(atPath: mountPoint)
+            
+            // Check if this is a network backup by looking for sparsebundle/backupbundle files
+            let networkBackupDirs = contents.filter { path in
+                path.hasSuffix(".sparsebundle") || path.hasSuffix(".backupbundle")
+            }.map { mountPoint + "/" + $0 }
+            
+            // If network backups found, calculate their sizes
+            if !networkBackupDirs.isEmpty {
+                logInfo("Found network backup bundles: \(networkBackupDirs)")
+                return try calculateDirectoriesSize(paths: networkBackupDirs)
+            }
+            
+            // If no network bundles found, check for local backup directories
+            let localBackupDirs = contents.filter { $0.hasSuffix(".backup") }
+                                        .map { mountPoint + "/" + $0 }
+            
+            if !localBackupDirs.isEmpty {
+                logInfo("Found local backup directories: \(localBackupDirs)")
+                return try calculateDirectoriesSize(paths: localBackupDirs)
+            }
+            
+            logInfo("No backup directories found")
+            return 0
+        } catch {
+            logError("Error calculating total backup size: \(error)")
+            return 0
+        }
+    }
+    
+    /// Calculate the total size of the given directories
+    /// - Parameter paths: The paths to calculate the size for
+    /// - Returns: The total size in bytes
+    /// - Throws: An error if the operation fails
+    private func calculateDirectoriesSize(paths: [String]) throws -> Int64 {
+        var totalSize: Int64 = 0
+        
+        for path in paths {
+            do {
+                // For each backup directory, try to get the size from the Results.plist file first
+                if let sizeFromPlist = try? readBackupSizeFromResultsPlist(path: path) {
+                    logInfo("Found size in Results.plist for \(path): \(sizeFromPlist) bytes")
+                    totalSize += sizeFromPlist
+                } else {
+                    // If Results.plist doesn't exist or doesn't contain BytesUsed, use du command
+                    logInfo("No Results.plist found, using du command for \(path)")
+                    let duOutput = try ShellCommandRunner.run("du", arguments: ["-sk", path])
+                    
+                    // Parse the du output to get the size
+                    let components = duOutput.components(separatedBy: .whitespaces)
+                        .filter { !$0.isEmpty }
+                    
+                    if let sizeInKB = Int64(components.first ?? "0") {
+                        let sizeInBytes = sizeInKB * 1024
+                        logInfo("Size of \(path): \(sizeInBytes) bytes")
+                        totalSize += sizeInBytes
+                    }
+                }
+            } catch {
+                logError("Error calculating size for \(path): \(error)")
+                // Continue with the next path
+            }
+        }
+        
+        return totalSize
+    }
+    
+    /// Read backup size from the Results.plist file
+    /// - Parameter path: The path to the backup
+    /// - Returns: The size in bytes if available
+    /// - Throws: An error if the file cannot be read or parsed
+    private func readBackupSizeFromResultsPlist(path: String) throws -> Int64 {
+        // Construct the path to the Results.plist file
+        let resultsPlistPath = path + "/com.apple.TimeMachine.Results.plist"
+        
+        // Check if the file exists
+        let fileManager = FileManager.default
+        guard fileManager.fileExists(atPath: resultsPlistPath) else {
+            logInfo("Results.plist not found at \(resultsPlistPath)")
+            throw NSError(domain: "com.tmbm", code: 404, userInfo: [NSLocalizedDescriptionKey: "Results.plist not found"])
+        }
+        
+        // Read the plist file
+        let plistData = try Data(contentsOf: URL(fileURLWithPath: resultsPlistPath))
+        
+        // Parse the plist
+        let plistDict = try PropertyListSerialization.propertyList(from: plistData, options: [], format: nil) as? [String: Any]
+        
+        // Extract the BytesUsed value
+        guard let bytesUsed = plistDict?["BytesUsed"] as? Int64 else {
+            logInfo("BytesUsed not found in Results.plist at \(resultsPlistPath)")
+            throw NSError(domain: "com.tmbm", code: 404, userInfo: [NSLocalizedDescriptionKey: "BytesUsed not found in Results.plist"])
+        }
+        
+        logInfo("Successfully read BytesUsed from Results.plist: \(bytesUsed) bytes")
+        return bytesUsed
+    }
+    
+    /// Extract the mount point from tmutil destinationinfo output
+    private func getMountPointFromDestinationInfo(_ output: String) throws -> String {
+        // Look for either MountPoint or URL in the output
+        let lines = output.components(separatedBy: .newlines)
+        
+        // First try to find a mount point (for local backups)
+        if let mountPointLine = lines.first(where: { $0.contains("MountPoint") }),
+           let mountPoint = mountPointLine.components(separatedBy: " : ").last?.trimmingCharacters(in: .whitespaces) {
+            return mountPoint
+        }
+        
+        // If no mount point, look for URL (for network backups)
+        if let urlLine = lines.first(where: { $0.contains("URL") }),
+           let urlString = urlLine.components(separatedBy: " : ").last?.trimmingCharacters(in: .whitespaces) {
+            // For network backups, we need to check if it's mounted
+            // The mount point will be under /Volumes
+            let urlComponents = urlString.components(separatedBy: "/")
+            if let shareName = urlComponents.last {
+                let potentialMountPoint = "/Volumes/" + shareName
+                if FileManager.default.fileExists(atPath: potentialMountPoint) {
+                    return potentialMountPoint
+                } else {
+                    logInfo("Mount point does not exist: \(potentialMountPoint)")
+                }
+            }
+        }
+        
+        logError("Could not find valid mount point in destinationinfo output")
+        logInfo("Destination info output: \(output)")
+        throw TimeMachineServiceError.diskInfoUnavailable
     }
     
     /// Lists all available backups
@@ -511,7 +760,7 @@ public class TimeMachineService: TimeMachineServiceProtocol, ObservableObject {
         
         do {
             // First check if Time Machine is configured by checking destination info
-            let destinationInfo = try ShellCommandRunner.run("tmutil destinationinfo")
+            let destinationInfo = try ShellCommandRunner.run("/usr/bin/tmutil", arguments: ["destinationinfo"])
             logInfo("Destination info: \(destinationInfo)")
             
             if destinationInfo.contains("No destinations configured") {
@@ -561,38 +810,6 @@ public class TimeMachineService: TimeMachineServiceProtocol, ObservableObject {
             logError("Unexpected error: \(error)")
             throw TimeMachineServiceError.commandExecutionFailed
         }
-    }
-    
-    /// Extract the mount point from tmutil destinationinfo output
-    private func getMountPointFromDestinationInfo(_ output: String) throws -> String {
-        // Look for either MountPoint or URL in the output
-        let lines = output.components(separatedBy: .newlines)
-        
-        // First try to find a mount point (for local backups)
-        if let mountPointLine = lines.first(where: { $0.contains("MountPoint") }),
-           let mountPoint = mountPointLine.components(separatedBy: " : ").last?.trimmingCharacters(in: .whitespaces) {
-            return mountPoint
-        }
-        
-        // If no mount point, look for URL (for network backups)
-        if let urlLine = lines.first(where: { $0.contains("URL") }),
-           let urlString = urlLine.components(separatedBy: " : ").last?.trimmingCharacters(in: .whitespaces) {
-            // For network backups, we need to check if it's mounted
-            // The mount point will be under /Volumes
-            let urlComponents = urlString.components(separatedBy: "/")
-            if let shareName = urlComponents.last {
-                let potentialMountPoint = "/Volumes/" + shareName
-                if FileManager.default.fileExists(atPath: potentialMountPoint) {
-                    return potentialMountPoint
-                } else {
-                    logInfo("Mount point does not exist: \(potentialMountPoint)")
-                }
-            }
-        }
-        
-        logError("Could not find valid mount point in destinationinfo output")
-        logInfo("Destination info output: \(output)")
-        throw TimeMachineServiceError.diskInfoUnavailable
     }
     
     /// Create BackupItem objects from a list of backup directory paths, with async size updates

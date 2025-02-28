@@ -1,5 +1,24 @@
 import Foundation
 
+/// Errors that can occur when running shell commands
+public enum ShellCommandError: Error, Equatable {
+    case commandExecutionFailed
+    case commandNotFound
+    case permissionDenied
+    
+    /// A description of the error
+    public var description: String {
+        switch self {
+        case .commandExecutionFailed:
+            return "The command failed to execute properly"
+        case .commandNotFound:
+            return "The specified command was not found"
+        case .permissionDenied:
+            return "Permission denied when executing the command"
+        }
+    }
+}
+
 /// A service for executing shell commands
 public class ShellCommandRunner {
     /// Executes a shell command and returns its output
@@ -9,6 +28,11 @@ public class ShellCommandRunner {
     /// - Returns: The output of the command
     /// - Throws: An error if the command fails
     public static func run(_ command: String, arguments: [String] = []) throws -> String {
+        // If command contains spaces and no arguments are provided, use bash to run it
+        if command.contains(" ") && arguments.isEmpty {
+            return try runInBash(command)
+        }
+        
         let process = Process()
         let pipe = Pipe()
         
@@ -22,16 +46,26 @@ public class ShellCommandRunner {
             process.waitUntilExit()
             
             let data = pipe.fileHandleForReading.readDataToEndOfFile()
-            if let output = String(data: data, encoding: .utf8) {
-                if process.terminationStatus != 0 {
-                    throw TimeMachineServiceError.commandExecutionFailed
-                }
-                return output
-            } else {
-                throw TimeMachineServiceError.commandExecutionFailed
+            guard let output = String(data: data, encoding: .utf8) else {
+                throw ShellCommandError.commandExecutionFailed
             }
+            
+            // Check exit status
+            if process.terminationStatus != 0 {
+                if output.contains("Permission denied") {
+                    throw ShellCommandError.permissionDenied
+                } else if output.contains("command not found") || output.contains("No such file or directory") {
+                    throw ShellCommandError.commandNotFound
+                } else {
+                    throw ShellCommandError.commandExecutionFailed
+                }
+            }
+            
+            return output
+        } catch let error as ShellCommandError {
+            throw error
         } catch {
-            throw TimeMachineServiceError.commandExecutionFailed
+            throw ShellCommandError.commandExecutionFailed
         }
     }
     
@@ -45,7 +79,15 @@ public class ShellCommandRunner {
         do {
             return try run("sudo", arguments: [command] + arguments)
         } catch {
-            throw TimeMachineServiceError.permissionDenied
+            throw ShellCommandError.permissionDenied
         }
+    }
+    
+    /// Runs a shell command using bash
+    /// - Parameter command: The full command string to run in bash
+    /// - Returns: The output of the command
+    /// - Throws: ShellCommandError if the command fails
+    public static func runInBash(_ command: String) throws -> String {
+        return try run("bash", arguments: ["-c", command])
     }
 } 
