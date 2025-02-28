@@ -1,7 +1,8 @@
 import Foundation
+import Combine
 
 /// Model for representing a Time Machine backup
-public struct BackupItem: Identifiable, Sendable {
+public class BackupItem: Identifiable, ObservableObject, @unchecked Sendable {
     /// Unique identifier for the backup
     public let id: UUID
     
@@ -15,10 +16,17 @@ public struct BackupItem: Identifiable, Sendable {
     public let date: Date
     
     /// Size of the backup in bytes
-    public let size: Int64
+    @Published public private(set) var size: Int64
+    
+    /// Whether the size is currently being calculated
+    @Published public private(set) var isCalculatingSize: Bool
     
     /// Formatted size of the backup
     public var formattedSize: String {
+        if isCalculatingSize {
+            return "Calculating..."
+        }
+        
         let formatter = ByteCountFormatter()
         formatter.allowedUnits = [.useAll]
         formatter.countStyle = .file
@@ -40,12 +48,14 @@ public struct BackupItem: Identifiable, Sendable {
     ///   - path: Path to the backup
     ///   - date: Date of the backup
     ///   - size: Size of the backup in bytes
-    public init(id: UUID = UUID(), name: String, path: String, date: Date, size: Int64) {
+    ///   - isCalculatingSize: Whether the size is currently being calculated
+    public init(id: UUID = UUID(), name: String, path: String, date: Date, size: Int64, isCalculatingSize: Bool = true) {
         self.id = id
         self.name = name
         self.path = path
         self.date = date
         self.size = size
+        self.isCalculatingSize = isCalculatingSize
     }
     
     /// Creates a mock backup item for testing
@@ -79,5 +89,20 @@ public struct BackupItem: Identifiable, Sendable {
         }
         
         return items
+    }
+    
+    /// Updates the size of the backup
+    /// - Parameter newSize: The new size in bytes
+    public func updateSize(_ newSize: Int64) {
+        // Explicitly trigger objectWillChange to ensure UI updates
+        objectWillChange.send()
+        self.size = newSize
+        self.isCalculatingSize = false
+    }
+}
+
+extension BackupItem: Equatable {
+    public static func == (lhs: BackupItem, rhs: BackupItem) -> Bool {
+        lhs.id == rhs.id
     }
 } 
