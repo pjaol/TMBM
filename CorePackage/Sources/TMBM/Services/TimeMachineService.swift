@@ -463,21 +463,158 @@ public class TimeMachineService: TimeMachineServiceProtocol, ObservableObject {
     public func getBackupStatus() throws -> (isRunning: Bool, lastBackupDate: Date?, nextBackupDate: Date?) {
         logInfo("Getting backup status")
         
-        // In a real implementation, we would use tmutil to get the status
-        // For now, we'll return mock data
-        
-        let isRunning = false
-        let lastBackupDate = Date().addingTimeInterval(-3600) // 1 hour ago
-        let nextBackupDate = Date().addingTimeInterval(3600) // 1 hour from now
-        
-        let status = (isRunning: isRunning, lastBackupDate: lastBackupDate, nextBackupDate: nextBackupDate)
-        
-        // Update the published property
-        DispatchQueue.main.async {
-            self.backupStatus = status
+        do {
+            // Read Time Machine preferences directly using defaults command
+            let tmPrefs = try ShellCommandRunner.run("/usr/bin/defaults", arguments: ["read", "/Library/Preferences/com.apple.TimeMachine"])
+            logInfo("Time Machine preferences read successfully")
+            
+            // Check if Time Machine is configured
+            if !tmPrefs.contains("Destinations") {
+                logInfo("No destinations configured in Time Machine preferences")
+                throw TimeMachineServiceError.noBackupDestinationConfigured
+            }
+            
+            // Parse the preferences to get backup information
+            let isRunning = isBackupRunning(tmPrefs)
+            let lastBackupDate = getLastBackupDate(tmPrefs)
+            let nextBackupDate = calculateNextBackupDate(tmPrefs, lastBackupDate: lastBackupDate)
+            
+            let status = (isRunning: isRunning, lastBackupDate: lastBackupDate, nextBackupDate: nextBackupDate)
+            
+            // Update the published property
+            DispatchQueue.main.async {
+                self.backupStatus = status
+            }
+            
+            return status
+        } catch let error as TimeMachineServiceError {
+            throw error
+        } catch {
+            logError("Failed to get backup status: \(error)")
+            
+            // If we have cached status, return it even if it's old
+            if let cachedStatus = backupStatus {
+                logInfo("Using cached backup status due to error")
+                return cachedStatus
+            }
+            
+            throw TimeMachineServiceError.commandExecutionFailed
+        }
+    }
+    
+    /// Check if a backup is currently running
+    /// - Parameter tmPrefs: The Time Machine preferences string
+    /// - Returns: True if a backup is running, false otherwise
+    private func isBackupRunning(_ tmPrefs: String) -> Bool {
+        // Check for LastBackupActivity which contains a timestamp of the current or last backup
+        // If it's very recent (within the last minute), a backup is likely running
+        if let activityRange = tmPrefs.range(of: "LastBackupActivity = \"(.+?)\"", options: .regularExpression) {
+            let activity = String(tmPrefs[activityRange])
+            
+            // Get the current date in the same format (YYYY-MM-DD-HHMMSS)
+            let dateFormatter = DateFormatter()
+            dateFormatter.dateFormat = "yyyy-MM-dd-HHmmss"
+            let currentDateString = dateFormatter.string(from: Date())
+            
+            // Extract just the timestamp from the activity string
+            if let timestampRange = activity.range(of: "\"(.+?)\"", options: .regularExpression) {
+                let timestamp = activity[timestampRange].replacingOccurrences(of: "\"", with: "")
+                
+                // If the timestamp is from the last 5 minutes, consider the backup as running
+                if let activityDate = dateFormatter.date(from: String(timestamp)),
+                   let currentDate = dateFormatter.date(from: currentDateString),
+                   currentDate.timeIntervalSince(activityDate) < 300 { // 5 minutes
+                    logInfo("Backup is currently running (activity: \(timestamp))")
+                    return true
+                }
+            }
         }
         
-        return status
+        // Alternative method: check if tmutil status reports a backup is running
+        do {
+            let statusOutput = try ShellCommandRunner.run("/usr/bin/tmutil", arguments: ["status"])
+            if statusOutput.contains("Running = 1") || statusOutput.contains("BackupPhase = ") {
+                logInfo("Backup is currently running (according to tmutil status)")
+                return true
+            }
+        } catch {
+            logInfo("Failed to check tmutil status, assuming backup is not running")
+        }
+        
+        return false
+    }
+    
+    /// Get the last backup date from Time Machine preferences
+    /// - Parameter tmPrefs: The Time Machine preferences string
+    /// - Returns: The date of the last backup, or nil if not found
+    private func getLastBackupDate(_ tmPrefs: String) -> Date? {
+        // Look for the SnapshotDates array in the preferences
+        let snapshotPattern = "SnapshotDates\\s*=\\s*\\(([^\\)]+)\\)"
+        guard let snapshotRange = tmPrefs.range(of: snapshotPattern, options: .regularExpression) else {
+            logInfo("No SnapshotDates found in Time Machine preferences")
+            return nil
+        }
+        
+        let snapshotsString = String(tmPrefs[snapshotRange])
+        
+        // Extract all dates using a regular expression
+        let datePattern = "\"([^\"]+)\""
+        let dateRegex = try? NSRegularExpression(pattern: datePattern, options: [])
+        let nsString = snapshotsString as NSString
+        let matches = dateRegex?.matches(in: snapshotsString, options: [], range: NSRange(location: 0, length: nsString.length)) ?? []
+        
+        var dates: [Date] = []
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "yyyy-MM-dd HH:mm:ss Z"
+        
+        for match in matches {
+            let range = match.range(at: 1)
+            let dateString = nsString.substring(with: range)
+            if let date = dateFormatter.date(from: dateString) {
+                dates.append(date)
+            }
+        }
+        
+        // Sort dates and get the most recent one
+        let sortedDates = dates.sorted(by: >)
+        if let lastDate = sortedDates.first {
+            logInfo("Last backup date: \(lastDate)")
+            return lastDate
+        }
+        
+        return nil
+    }
+    
+    /// Calculate the next backup date based on Time Machine preferences
+    /// - Parameters:
+    ///   - tmPrefs: The Time Machine preferences string
+    ///   - lastBackupDate: The date of the last backup
+    /// - Returns: The estimated date of the next backup, or nil if not determinable
+    private func calculateNextBackupDate(_ tmPrefs: String, lastBackupDate: Date?) -> Date? {
+        guard let lastBackupDate = lastBackupDate else {
+            logInfo("Cannot calculate next backup date without a last backup date")
+            return nil
+        }
+        
+        // Try to get the backup interval from preferences
+        var backupInterval: TimeInterval = 3600 // Default to 1 hour if not found
+        
+        // Look for AutoBackupInterval in the preferences
+        let intervalPattern = "AutoBackupInterval\\s*=\\s*(\\d+)"
+        if let intervalRange = tmPrefs.range(of: intervalPattern, options: .regularExpression),
+           let intervalString = tmPrefs[intervalRange].split(separator: "=").last?.trimmingCharacters(in: .whitespaces),
+           let interval = TimeInterval(intervalString) {
+            backupInterval = interval
+            logInfo("Found backup interval: \(backupInterval) seconds")
+        } else {
+            logInfo("No backup interval found, using default of 1 hour")
+        }
+        
+        // Calculate the next backup date
+        let nextBackupDate = lastBackupDate.addingTimeInterval(backupInterval)
+        logInfo("Next backup date: \(nextBackupDate)")
+        
+        return nextBackupDate
     }
     
     /// Gets the disk usage information with caching
