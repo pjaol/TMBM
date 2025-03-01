@@ -96,6 +96,7 @@ iOSInjectionProject/
 
 # Project-specific
 .backup/
+build-logs/
 *.swp
 *.swo
 *~
