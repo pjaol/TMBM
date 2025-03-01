@@ -44,7 +44,9 @@ jobs:
     - name: Test Core Package
       run: |
         cd CorePackage
-        swift test -v
+        # Use --enable-test-discovery to find all tests
+        # Use --sanitize=thread to help with async tests
+        swift test --enable-test-discovery --sanitize=thread
       
     - name: Build App
       run: |

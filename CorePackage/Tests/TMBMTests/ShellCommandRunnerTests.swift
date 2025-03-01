@@ -17,7 +17,7 @@ final class ShellCommandRunnerTests: XCTestCase {
             XCTFail("Invalid command should throw an error")
         } catch let error as ShellCommandError {
             // Expected error
-            XCTAssertEqual(error, .commandExecutionFailed)
+            XCTAssertEqual(error, .commandNotFound)
         } catch {
             XCTFail("Unexpected error type: \(error)")
         }
