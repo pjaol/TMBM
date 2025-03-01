@@ -31,7 +31,7 @@ struct SchedulingView: View {
                         .font(.headline)
                     
                     if let last = lastBackupDate {
-                        Text("Last backup: \(RelativeDateTimeFormatter().localizedString(for: last, relativeTo: Date()))")
+                        Text("Last backup: \(formattedDate(last))")
                     } else {
                         Text("No previous backups found")
                             .foregroundColor(.secondary)
@@ -101,6 +101,14 @@ struct SchedulingView: View {
         }
     }
     
+    private func formattedDate(_ date: Date) -> String {
+        let formatter: DateFormatter = DateFormatter()
+        formatter.dateStyle = .medium  // Use .short, .medium, .long, or .full
+        formatter.timeStyle = .short   // Show time with hours/minutes
+        return formatter.string(from: date)
+    }
+
+
     private func loadBackupStatus() {
         isLoading = true
         errorMessage = nil
