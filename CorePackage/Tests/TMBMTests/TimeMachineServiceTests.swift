@@ -15,8 +15,7 @@ class MockTimeMachineService: TimeMachineServiceProtocol {
         return StorageInfo(
             totalSpace: 1000000000000,
             usedSpace: 500000000000,
-            availableSpace: 500000000000,
-            usagePercentage: 50
+            backupSpace: 200000000000
         )
     }
     
