@@ -26,8 +26,19 @@ swiftc -o build/TMBMApp \
 
 # Check if compilation was successful
 if [ $? -eq 0 ]; then
-    echo "Build successful! Running TMBMApp..."
-    ./build/TMBMApp
+    echo "Build successful!"
+    
+    # Create app bundle structure
+    mkdir -p build/TMBMApp.app/Contents/MacOS
+    cp build/TMBMApp build/TMBMApp.app/Contents/MacOS/
+    
+    # Only run the app if not in CI environment
+    if [ -z "$CI" ]; then
+        echo "Running TMBMApp..."
+        ./build/TMBMApp
+    else
+        echo "Skipping app execution in CI environment."
+    fi
 else
     echo "Build failed. Please check the errors above."
 fi 
