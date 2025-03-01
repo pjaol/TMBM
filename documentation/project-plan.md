@@ -37,13 +37,13 @@ Below is a **sample Agile project plan** that breaks down the **requirements** (
 |-----------|--------------------------------------------------------------------------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------|-----------|------------|
 | 7         | **Real-time "List Backups"**: Integrate with `tmutil listbackups` (or direct FS parsing) for actual data. | - UI table shows correct list of backups (date/time, size if available) - Fetch is triggered on app launch or user refresh                     | 1         | Completed |
 | 8         | **Implement Manual Deletion**: Hook `deleteBackup()` to UI to remove old backups.                       | - User can select a backup entry, click "Delete" - Confirmation dialog and final success/fail feedback shown                                   | 1         | Not Started |
-| 9         | **Disk Usage Overview**: Show total/used capacity of the backup drive(s).                              | - Display updated usage info in UI (e.g., progress bar or numeric) - Reflect changes after deletions                                           | 1         | In Progress |
+| 9         | **Disk Usage Overview**: Show total/used capacity of the backup drive(s).                              | - Display updated usage info in UI (e.g., progress bar or numeric) - Reflect changes after deletions                                           | 1         | Completed |
 | 10        | **SchedulingService**: Basic scheduling for backups (hourly/daily/weekly) + "Pause Backups."           | - User can select frequency in Preferences - "Pause" toggles on/off actual scheduling - Visual indicator for next scheduled backup             | 1         | In Progress |
 | 11        | **Preferences & Persistence** (UserDefaults) for scheduling and basic settings.                        | - Schedules persist across app restarts - "Launch at Login" preference is stored (but not fully implemented yet)                               | 1         | Not Started |
 | 12        | **Menu Bar Updates**: Show last backup time, next backup time, and a button to open the main UI.       | - Clicking on menu bar icon: pop-up with "Last Backup: X min ago," "Next Backup: X" - Button "Open Backup Manager" is functional               | 1         | Completed |
 | 13        | **Basic Unit Testing** of Services**: TimeMachineService, SchedulingService.                           | - At least 1 test per method (listBackups, deleteBackup, schedule triggers) - Tests run in CI successfully                                     | 1         | Not Started |
 
-**Sprint 2 Total**: 2/7 story points completed, 3 in progress, 2 not started
+**Sprint 2 Total**: 3/7 story points completed, 2 in progress, 2 not started
 
 ---
 
@@ -100,12 +100,12 @@ Based on the current state of the project, we've identified additional tasks tha
 ## Summary of Progress
 
 - **Sprint 1**: 5/6 points completed (83% complete)
-- **Sprint 2**: 2/7 points completed, 3 in progress, 2 not started (29% complete, 43% in progress)
+- **Sprint 2**: 3/7 points completed, 2 in progress, 2 not started (43% complete, 29% in progress)
 - **Sprint 3**: 2/6 points completed, 3 in progress, 1 not started (33% complete, 50% in progress)
 - **Sprint 4**: 3/5 points completed, 2 in progress (60% complete, 40% in progress)
 - **New Tasks**: 8/8 points completed (100% complete)
 
-**Total Progress**: 20/32 story points completed (63%), 8 in progress (25%), 4 not started (12%)
+**Total Progress**: 21/32 story points completed (66%), 7 in progress (22%), 4 not started (12%)
 
 ---
 
@@ -153,5 +153,55 @@ We've made significant improvements to the backup size calculation and display f
    - Addressed unused task variable warning in `BackupListView`
 
 These improvements have significantly enhanced the user experience by ensuring that backup sizes are calculated accurately and displayed promptly in the UI.
+
+### Disk Usage Visualization
+
+We've implemented a comprehensive disk usage visualization feature that provides users with clear insights into their backup storage:
+
+1. **Enhanced Storage Information Model**:
+   - Added backup space tracking to the StorageInfo model
+   - Implemented calculation of backup vs. non-backup space usage
+   - Added proper formatting for human-readable storage values
+
+2. **Visual Representation**:
+   - Created a clean, intuitive visualization using Swift Charts
+   - Implemented a two-bar system showing total space usage and backup space breakdown
+   - Added color coding to distinguish between different storage categories
+   - Included an information note about sparse bundle calculations being approximate
+
+3. **User Experience Improvements**:
+   - Added a refresh button for updating disk usage data on demand
+   - Implemented proper error handling for various disk access scenarios
+   - Ensured the visualization is responsive and updates correctly when data changes
+   - Optimized performance to prevent UI freezes during calculations
+
+4. **Technical Enhancements**:
+   - Moved ShellCommandRunner from Utilities to Services for better organization
+   - Enhanced TimeMachineService to calculate actual backup space usage
+   - Added proper async/await handling to ensure UI updates occur on the main thread
+   - Implemented error handling for edge cases like disconnected backup drives
+
+This feature provides users with a clear visual understanding of how their disk space is being utilized by Time Machine backups, making it easier to manage storage and make informed decisions about backup retention.
+
+### Code Quality and Build Process Improvements
+
+We've made several improvements to the codebase structure and build process:
+
+1. **Fixed Duplicate File Issues**:
+   - Resolved a build error caused by duplicate `ShellCommandRunner.swift` files in both Utilities and Services directories
+   - Standardized on the more comprehensive implementation in the Utilities directory
+   - Added checks to prevent similar issues in the future
+
+2. **Code Organization**:
+   - Ensured proper separation of concerns between Services and Utilities
+   - Maintained consistent error handling patterns across the codebase
+   - Improved logging for better debugging and troubleshooting
+
+3. **Build Process Reliability**:
+   - Enhanced the build scripts to provide clearer error messages
+   - Added validation steps to catch common build issues early
+   - Documented the build process for easier onboarding of new developers
+
+These improvements have made the codebase more maintainable and the build process more reliable, reducing development friction and ensuring a smoother experience for both developers and end users.
 
 ---

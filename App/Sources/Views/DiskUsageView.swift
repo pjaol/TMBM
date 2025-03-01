@@ -246,7 +246,7 @@ struct DiskUsageView: View {
         
         Task {
             do {
-                try timeMachineService.getDiskUsage()
+                _ = try timeMachineService.getDiskUsage()
                 DispatchQueue.main.async {
                     self.isLoading = false
                 }
