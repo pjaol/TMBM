@@ -11,6 +11,8 @@ struct SchedulingView: View {
     @State private var showingStartBackupConfirmation: Bool = false
     
     private let timeMachineService = TimeMachineService()
+    private let schedulingService = SchedulingService.shared
+    private let preferencesService = PreferencesService.shared
     
     var body: some View {
         VStack(spacing: 20) {
@@ -55,6 +57,9 @@ struct SchedulingView: View {
                     }
                     .pickerStyle(SegmentedPickerStyle())
                     .disabled(isBackupPaused)
+                    .onChange(of: selectedFrequency) { oldValue, newValue in
+                        updateBackupFrequency(frequency: newValue)
+                    }
                     
                     Toggle("Pause Backups", isOn: $isBackupPaused)
                         .onChange(of: isBackupPaused) { oldValue, newValue in
@@ -84,6 +89,7 @@ struct SchedulingView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .onAppear {
             loadBackupStatus()
+            loadPreferences()
         }
         .alert("Start Backup", isPresented: $showingStartBackupConfirmation) {
             Button("Cancel", role: .cancel) { }
@@ -103,24 +109,44 @@ struct SchedulingView: View {
             do {
                 let status = try timeMachineService.getBackupStatus()
                 lastBackupDate = status.lastBackupDate
-                nextBackupDate = status.nextBackupDate
+                nextBackupDate = schedulingService.getNextScheduledBackupDate()
+                
+                DispatchQueue.main.async {
+                    self.isLoading = false
+                }
             } catch {
-                errorMessage = "Failed to load backup status: \(error.localizedDescription)"
+                DispatchQueue.main.async {
+                    self.errorMessage = "Failed to load backup status: \(error.localizedDescription)"
+                    self.isLoading = false
+                }
             }
-            isLoading = false
+        }
+    }
+    
+    private func loadPreferences() {
+        let preferences = preferencesService.getPreferences()
+        
+        DispatchQueue.main.async {
+            self.selectedFrequency = preferences.backupScheduleFrequency
+            self.isBackupPaused = preferences.isBackupPaused
+        }
+    }
+    
+    private func updateBackupFrequency(frequency: AppPreferences.BackupFrequency) {
+        Task {
+            schedulingService.setBackupFrequency(frequency)
+            loadBackupStatus()
         }
     }
     
     private func updateBackupStatus(isPaused: Bool) {
         Task {
-            do {
-                if isPaused {
-                    try timeMachineService.stopBackup()
-                }
-                loadBackupStatus()
-            } catch {
-                errorMessage = "Failed to update backup status: \(error.localizedDescription)"
+            if isPaused {
+                schedulingService.pauseBackups()
+            } else {
+                schedulingService.resumeBackups()
             }
+            loadBackupStatus()
         }
     }
     
@@ -130,7 +156,9 @@ struct SchedulingView: View {
                 try timeMachineService.startBackup()
                 loadBackupStatus()
             } catch {
-                errorMessage = "Failed to start backup: \(error.localizedDescription)"
+                DispatchQueue.main.async {
+                    self.errorMessage = "Failed to start backup: \(error.localizedDescription)"
+                }
             }
         }
     }
