@@ -12,6 +12,7 @@ xcuserdata/
 
 ## Build generated
 build/
+!build/TMBMApp.app/
 DerivedData/
 *.o
 *.LinkFileList
@@ -96,6 +97,7 @@ iOSInjectionProject/
 
 # Project-specific
 .backup/
+build-logs/
 *.swp
 *.swo
 *~
@@ -125,3 +127,8 @@ Icon
 # Xcode additional
 *.xcarchive
 *.xcresult
+
+# Temporary files
+*.tmp
+*.bak
+*.backup

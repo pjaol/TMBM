@@ -45,7 +45,7 @@ struct SettingsView: View {
                         .foregroundColor(.secondary)
                 }
                 
-                Link("View on GitHub", destination: URL(string: "https://github.com/yourusername/tmbm")!)
+                Link("View on GitHub", destination: URL(string: "https://github.com/pjaol/TMBM")!)
             }
         }
         .padding(.horizontal, 16)
