@@ -1,3 +1,4 @@
+ 
 #!/bin/bash
 
 # Create temporary iconset directory
