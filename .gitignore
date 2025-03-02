@@ -132,3 +132,8 @@ Icon
 *.tmp
 *.bak
 *.backup
+
+# App icon
+App/Resources/AppIcon.icns
+assets/tmbm_icon.png
+assets/tmbm_icon.pxd
