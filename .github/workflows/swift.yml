@@ -67,7 +67,7 @@ jobs:
       run: |
         mkdir -p build
         cd build
-        tar -czf TMBM-app.tar.gz ../App ../build/TMBMApp.app
+        tar -czf TMBM-app.tar.gz ../App ./TMBMApp.app
       
     - name: Upload build artifacts
       if: github.event_name == 'push' && github.ref == 'refs/heads/main'
