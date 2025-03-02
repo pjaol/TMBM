@@ -2,12 +2,38 @@
 
 A macOS application for managing Time Machine backups.
 
+## Overview
+
+TMBM (Time Machine Backup Manager) is a lightweight, user-friendly macOS application that gives you greater control over your Time Machine backups. It sits in your menu bar, providing quick access to backup status, history, and controls without needing to open System Preferences.
+
+Whether you want to monitor backup progress, schedule backups at specific times, or check disk usage, TMBM makes managing your Time Machine backups simpler and more efficient.
+
 ## Features
 
-- View backup status and history
-- Schedule backups
-- Monitor disk usage
-- Manage backup destinations
+### Menu Bar Quick Access
+Access all Time Machine functions directly from your menu bar. See backup status at a glance and control backups with a single click.
+
+![Menu Bar Interface](documentation/assets/menu_item_screen.png)
+
+### Backup History and Status
+View your backup history and current status in a clean, intuitive interface. Know exactly when your last backup completed and when the next one is scheduled.
+
+![Backups Screen](documentation/assets/backups_screen.png)
+
+### Disk Usage Monitoring
+Monitor your backup disk usage with a visual representation of available space. Get alerts when your backup disk is running low on space.
+
+![Disk Usage Screen](documentation/assets/disk_usage_screen.png)
+
+### Custom Backup Scheduling
+Set up custom backup schedules that work for you. Schedule backups for specific times or intervals to ensure your data is protected without disrupting your workflow.
+
+![Scheduling Screen](documentation/assets/scheduling_screen.png)
+
+### Backup Destination Management
+Easily manage and switch between multiple backup destinations. Add, remove, or select different backup drives with a simple interface.
+
+![Settings Screen](documentation/assets/settings_screen.png)
 
 ## Development
 
