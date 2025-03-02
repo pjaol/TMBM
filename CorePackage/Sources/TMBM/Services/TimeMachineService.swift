@@ -393,6 +393,11 @@ public protocol TimeMachineServiceProtocol {
     ///   - newSize: The new size in bytes
     /// - Throws: An error if the operation fails
     func resizeSparsebundle(path: String, newSize: Int64) throws
+    
+    /// Mounts the backup volume if it's not already mounted
+    /// - Returns: The mount point of the backup volume
+    /// - Throws: An error if the operation fails
+    func mountBackupVolumeIfNeeded() async throws -> String
 }
 
 /// Errors that can occur during Time Machine operations
@@ -410,6 +415,8 @@ public enum TimeMachineServiceError: Error, Equatable {
     case permissionDenied
     case fullDiskAccessRequired
     case noBackupDestinationConfigured
+    case volumeNotMounted
+    case volumeMountFailed
     
     /// A description of the error
     public var description: String {
@@ -440,6 +447,10 @@ public enum TimeMachineServiceError: Error, Equatable {
             return "Full Disk Access required. Please grant access in System Settings > Privacy & Security > Full Disk Access."
         case .noBackupDestinationConfigured:
             return "No backup destination configured"
+        case .volumeNotMounted:
+            return "The backup volume is not mounted"
+        case .volumeMountFailed:
+            return "Failed to mount the backup volume"
         }
     }
 }
@@ -475,9 +486,19 @@ public class TimeMachineService: TimeMachineServiceProtocol, ObservableObject {
             }
             
             // Parse the preferences to get backup information
-            let isRunning = isBackupRunning(tmPrefs)
-            let lastBackupDate = getLastBackupDate(tmPrefs)
-            let nextBackupDate = calculateNextBackupDate(tmPrefs, lastBackupDate: lastBackupDate)
+            let isRunning = try isBackupRunning()
+            let lastBackupDate = try getLastBackupDate()
+            let nextBackupDate = try calculateNextBackupDate()
+            
+            // Try to mount the backup volume if needed
+            Task {
+                do {
+                    _ = try await mountBackupVolumeIfNeeded()
+                } catch {
+                    logError("Failed to mount backup volume: \(error)")
+                    // We don't throw here since this is a background task and we don't want to fail the status check
+                }
+            }
             
             let status = (isRunning: isRunning, lastBackupDate: lastBackupDate, nextBackupDate: nextBackupDate)
             
@@ -502,119 +523,45 @@ public class TimeMachineService: TimeMachineServiceProtocol, ObservableObject {
         }
     }
     
-    /// Check if a backup is currently running
-    /// - Parameter tmPrefs: The Time Machine preferences string
+    /// Checks if a backup is currently running
     /// - Returns: True if a backup is running, false otherwise
-    private func isBackupRunning(_ tmPrefs: String) -> Bool {
-        // Check for LastBackupActivity which contains a timestamp of the current or last backup
-        // If it's very recent (within the last minute), a backup is likely running
-        if let activityRange = tmPrefs.range(of: "LastBackupActivity = \"(.+?)\"", options: .regularExpression) {
-            let activity = String(tmPrefs[activityRange])
-            
-            // Get the current date in the same format (YYYY-MM-DD-HHMMSS)
-            let dateFormatter = DateFormatter()
-            dateFormatter.dateFormat = "yyyy-MM-dd-HHmmss"
-            let currentDateString = dateFormatter.string(from: Date())
-            
-            // Extract just the timestamp from the activity string
-            if let timestampRange = activity.range(of: "\"(.+?)\"", options: .regularExpression) {
-                let timestamp = activity[timestampRange].replacingOccurrences(of: "\"", with: "")
-                
-                // If the timestamp is from the last 5 minutes, consider the backup as running
-                if let activityDate = dateFormatter.date(from: String(timestamp)),
-                   let currentDate = dateFormatter.date(from: currentDateString),
-                   currentDate.timeIntervalSince(activityDate) < 300 { // 5 minutes
-                    logInfo("Backup is currently running (activity: \(timestamp))")
-                    return true
-                }
-            }
+    /// - Throws: An error if the operation fails
+    private func isBackupRunning() throws -> Bool {
+        // Check if tmutil status shows a backup in progress
+        let status = try ShellCommandRunner.run("/usr/bin/tmutil", arguments: ["status"])
+        if status.contains("Running = 1") {
+            return true
         }
-        
-        // Alternative method: check if tmutil status reports a backup is running
-        do {
-            let statusOutput = try ShellCommandRunner.run("/usr/bin/tmutil", arguments: ["status"])
-            if statusOutput.contains("Running = 1") || statusOutput.contains("BackupPhase = ") {
-                logInfo("Backup is currently running (according to tmutil status)")
-                return true
-            }
-        } catch {
-            logInfo("Failed to check tmutil status, assuming backup is not running")
-        }
-        
         return false
     }
     
-    /// Get the last backup date from Time Machine preferences
-    /// - Parameter tmPrefs: The Time Machine preferences string
+    /// Gets the last backup date from Time Machine preferences
     /// - Returns: The date of the last backup, or nil if not found
-    private func getLastBackupDate(_ tmPrefs: String) -> Date? {
-        // Look for the SnapshotDates array in the preferences
-        let snapshotPattern = "SnapshotDates\\s*=\\s*\\(([^\\)]+)\\)"
-        guard let snapshotRange = tmPrefs.range(of: snapshotPattern, options: .regularExpression) else {
-            logInfo("No SnapshotDates found in Time Machine preferences")
-            return nil
+    /// - Throws: An error if the operation fails
+    private func getLastBackupDate() throws -> Date? {
+        // Parse the preferences to find the last backup date
+        let lines = try ShellCommandRunner.run("/usr/bin/tmutil", arguments: ["status"]).components(separatedBy: .newlines)
+        if let dateLine = lines.first(where: { $0.contains("LastBackupDate") }),
+           let dateString = dateLine.components(separatedBy: " = ").last?.trimmingCharacters(in: CharacterSet(charactersIn: "\";")),
+           let timeInterval = TimeInterval(dateString) {
+            return Date(timeIntervalSince1970: timeInterval)
         }
-        
-        let snapshotsString = String(tmPrefs[snapshotRange])
-        
-        // Extract all dates using a regular expression
-        let datePattern = "\"([^\"]+)\""
-        let dateRegex = try? NSRegularExpression(pattern: datePattern, options: [])
-        let nsString = snapshotsString as NSString
-        let matches = dateRegex?.matches(in: snapshotsString, options: [], range: NSRange(location: 0, length: nsString.length)) ?? []
-        
-        var dates: [Date] = []
-        let dateFormatter = DateFormatter()
-        dateFormatter.dateFormat = "yyyy-MM-dd HH:mm:ss Z"
-        
-        for match in matches {
-            let range = match.range(at: 1)
-            let dateString = nsString.substring(with: range)
-            if let date = dateFormatter.date(from: dateString) {
-                dates.append(date)
-            }
-        }
-        
-        // Sort dates and get the most recent one
-        let sortedDates = dates.sorted(by: >)
-        if let lastDate = sortedDates.first {
-            logInfo("Last backup date: \(lastDate)")
-            return lastDate
-        }
-        
         return nil
     }
     
-    /// Calculate the next backup date based on Time Machine preferences
-    /// - Parameters:
-    ///   - tmPrefs: The Time Machine preferences string
-    ///   - lastBackupDate: The date of the last backup
-    /// - Returns: The estimated date of the next backup, or nil if not determinable
-    private func calculateNextBackupDate(_ tmPrefs: String, lastBackupDate: Date?) -> Date? {
-        guard let lastBackupDate = lastBackupDate else {
-            logInfo("Cannot calculate next backup date without a last backup date")
-            return nil
+    /// Calculates the next backup date based on Time Machine preferences
+    /// - Returns: The calculated next backup date, or nil if not determinable
+    /// - Throws: An error if the operation fails
+    private func calculateNextBackupDate() throws -> Date? {
+        // Parse the preferences to find the backup interval
+        let lines = try ShellCommandRunner.run("/usr/bin/tmutil", arguments: ["status"]).components(separatedBy: .newlines)
+        if let intervalLine = lines.first(where: { $0.contains("BackupInterval") }),
+           let intervalString = intervalLine.components(separatedBy: " = ").last?.trimmingCharacters(in: CharacterSet(charactersIn: "\";")),
+           let interval = TimeInterval(intervalString),
+           let lastBackup = try? getLastBackupDate() {
+            return lastBackup.addingTimeInterval(interval)
         }
-        
-        // Try to get the backup interval from preferences
-        var backupInterval: TimeInterval = 3600 // Default to 1 hour if not found
-        
-        // Look for AutoBackupInterval in the preferences
-        let intervalPattern = "AutoBackupInterval\\s*=\\s*(\\d+)"
-        if let intervalRange = tmPrefs.range(of: intervalPattern, options: .regularExpression),
-           let intervalString = tmPrefs[intervalRange].split(separator: "=").last?.trimmingCharacters(in: .whitespaces),
-           let interval = TimeInterval(intervalString) {
-            backupInterval = interval
-            logInfo("Found backup interval: \(backupInterval) seconds")
-        } else {
-            logInfo("No backup interval found, using default of 1 hour")
-        }
-        
-        // Calculate the next backup date
-        let nextBackupDate = lastBackupDate.addingTimeInterval(backupInterval)
-        logInfo("Next backup date: \(nextBackupDate)")
-        
-        return nextBackupDate
+        return nil
     }
     
     /// Gets the disk usage information with caching
@@ -1052,6 +999,80 @@ public class TimeMachineService: TimeMachineServiceProtocol, ObservableObject {
         
         // Simulate a successful resize
         logInfo("Sparsebundle resized successfully")
+    }
+    
+    /// Mounts the backup volume if it's not already mounted
+    /// - Returns: The mount point of the backup volume
+    /// - Throws: An error if the operation fails
+    public func mountBackupVolumeIfNeeded() async throws -> String {
+        logInfo("Checking if backup volume needs to be mounted")
+        
+        do {
+            // First check if Time Machine is configured by checking destination info
+            let destinationInfo = try ShellCommandRunner.run("/usr/bin/tmutil", arguments: ["destinationinfo"])
+            logInfo("Destination info: \(destinationInfo)")
+            
+            if destinationInfo.contains("No destinations configured") {
+                throw TimeMachineServiceError.noBackupDestinationConfigured
+            }
+            
+            // Try to get the mount point first
+            if let mountPoint = try? getMountPointFromDestinationInfo(destinationInfo) {
+                logInfo("Backup volume is already mounted at: \(mountPoint)")
+                return mountPoint
+            }
+            
+            // If we get here, the volume is not mounted. Try to find the URL.
+            let lines = destinationInfo.components(separatedBy: .newlines)
+            guard let urlLine = lines.first(where: { $0.contains("URL") }),
+                  let urlString = urlLine.components(separatedBy: " : ").last?.trimmingCharacters(in: .whitespaces) else {
+                logError("Could not find URL in destination info")
+                throw TimeMachineServiceError.volumeNotMounted
+            }
+            
+            // For network backups, try to mount the volume
+            logInfo("Attempting to mount backup volume from URL: \(urlString)")
+            
+            // Use mount_smbfs for SMB shares or mount_afp for AFP shares
+            let mountCommand: String
+            let mountArgs: [String]
+            
+            if urlString.starts(with: "smb://") {
+                mountCommand = "/sbin/mount_smbfs"
+                mountArgs = [urlString.replacingOccurrences(of: "smb://", with: "//")]
+            } else if urlString.starts(with: "afp://") {
+                mountCommand = "/sbin/mount_afp"
+                mountArgs = [urlString, "/Volumes"]
+            } else {
+                logError("Unsupported URL scheme: \(urlString)")
+                throw TimeMachineServiceError.volumeMountFailed
+            }
+            
+            // Try to mount the volume
+            do {
+                try ShellCommandRunner.run(mountCommand, arguments: mountArgs)
+                logInfo("Successfully mounted backup volume")
+                
+                // Wait a moment for the mount to complete
+                try await Task.sleep(nanoseconds: 1_000_000_000) // 1 second
+                
+                // Try to get the mount point again
+                if let mountPoint = try? getMountPointFromDestinationInfo(destinationInfo) {
+                    logInfo("Backup volume is now mounted at: \(mountPoint)")
+                    return mountPoint
+                }
+                
+                throw TimeMachineServiceError.volumeMountFailed
+            } catch {
+                logError("Failed to mount backup volume: \(error)")
+                throw TimeMachineServiceError.volumeMountFailed
+            }
+        } catch let error as TimeMachineServiceError {
+            throw error
+        } catch {
+            logError("Unexpected error while mounting backup volume: \(error)")
+            throw TimeMachineServiceError.commandExecutionFailed
+        }
     }
 }
 
