@@ -10,6 +10,9 @@ cd "$(dirname "$0")/.."
 # Create a build directory if it doesn't exist
 mkdir -p build
 
+# Clean up any existing app bundle
+rm -rf "build/TMBMApp.app"
+
 # First, build the Core Package as a module
 echo "Building Core Package as module..."
 CORE_MODULE_PATH="build/CoreModule"
@@ -49,11 +52,6 @@ fi
 
 # Copy the Core Package module and library to the Frameworks directory
 cp "$CORE_MODULE_PATH/libTMBM.dylib" "$APP_FRAMEWORKS/"
-
-# Create module directory structure
-rm -rf "$APP_FRAMEWORKS/TMBM.swiftmodule"
-mkdir -p "$APP_FRAMEWORKS/TMBM.swiftmodule"
-cp -f "$CORE_MODULE_PATH"/TMBM.swiftmodule/* "$APP_FRAMEWORKS/TMBM.swiftmodule/" 2>/dev/null || true
 
 # Find all Swift files in the App
 APP_FILES=$(find App/Sources -name "*.swift" | tr '\n' ' ')
@@ -115,11 +113,39 @@ cat > "$APP_CONTENTS/Info.plist" << EOF
 </plist>
 EOF
 
+# Code sign the dylib
+echo "Code signing the dylib..."
+codesign --force --sign "-" "$APP_FRAMEWORKS/libTMBM.dylib"
+
+# Create a simple entitlements file
+cat > "build/entitlements.plist" << EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>com.apple.security.app-sandbox</key>
+    <false/>
+    <key>com.apple.security.files.user-selected.read-write</key>
+    <true/>
+    <key>com.apple.security.files.bookmarks.app-scope</key>
+    <true/>
+</dict>
+</plist>
+EOF
+
+# Create a dummy resource file to satisfy code signing requirements
+touch "$APP_RESOURCES/empty.txt"
+
+# Code sign the app
+echo "Code signing the app..."
+codesign --force --deep --sign "-" --entitlements "build/entitlements.plist" "$APP_BUNDLE"
+
 echo "Build successful! App bundle created at: $APP_BUNDLE"
 echo "You can now open the app with: open $APP_BUNDLE"
 
 # Clean up build artifacts
 rm -rf "$CORE_MODULE_PATH"
+rm -f "build/entitlements.plist"
 
 # Only open the app if not in CI environment
 if [ -z "$CI" ]; then

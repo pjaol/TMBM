@@ -137,6 +137,22 @@ The first official release of TMBM (Time Machine Backup Manager) has been comple
 
 The v0.1.0 release represents a significant milestone in the project, providing a solid foundation for future development and enhancement.
 
+## v0.1.1 Bugfix Release
+
+A bugfix release (v0.1.1) has been created to address the following issues:
+
+1. **Fixed Code Signing**: 
+   - Resolved an issue where the app was reported as damaged when launched
+   - Implemented proper code signing with entitlements
+   - Improved the app bundle structure to meet macOS requirements
+
+2. **Build Process Improvements**:
+   - Enhanced the build script to properly handle code signing
+   - Added entitlements for file access
+   - Created a more robust release process
+
+This release ensures that users can launch the application without security warnings and improves the overall reliability of the application.
+
 ---
 
 ## Next Steps for Future Releases
