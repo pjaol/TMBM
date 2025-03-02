@@ -133,6 +133,10 @@ Icon
 *.bak
 *.backup
 
+# Backup files
+*.bak
+*.backup
+
 # App icon
 App/Resources/AppIcon.icns
 assets/tmbm_icon.png
