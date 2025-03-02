@@ -55,6 +55,10 @@ class MockTimeMachineService: TimeMachineServiceProtocol {
     func resizeSparsebundle(path: String, newSize: Int64) throws {
         // Mock implementation
     }
+    
+    func mountBackupVolumeIfNeeded() async throws -> String {
+        return "/Volumes/MockBackup"
+    }
 }
 
 final class TimeMachineServiceTests: XCTestCase {
@@ -81,55 +85,58 @@ final class TimeMachineServiceTests: XCTestCase {
     }
     
     func testGetBackupStatus() throws {
-        do {
-            // Since we're using mock data, we can check if it returns expected values
-            let status = try service.getBackupStatus()
-            // The status is a tuple with named fields
-            XCTAssertNotNil(status.isRunning)
+        // Since we're using mock data, we can check if it returns expected values
+        let status = try service.getBackupStatus()
+        
+        if isCIEnvironment {
+            // In CI, we expect the mock values
+            XCTAssertFalse(status.isRunning)
             XCTAssertNotNil(status.lastBackupDate)
             XCTAssertNotNil(status.nextBackupDate)
-        } catch TimeMachineServiceError.noBackupDestinationConfigured {
-            // Skip test if no backup destination is configured (in CI environment)
-            if !isCIEnvironment {
-                throw TimeMachineServiceError.noBackupDestinationConfigured
+        } else {
+            // For real service, just verify the structure
+            XCTAssertNotNil(status.isRunning)
+            // Dates might be nil if no backups exist
+            if status.lastBackupDate != nil {
+                XCTAssertNotNil(status.nextBackupDate)
             }
         }
     }
     
     func testGetDiskUsage() throws {
-        do {
-            // Verify disk usage properties
-            let diskUsage = try service.getDiskUsage()
+        let diskUsage = try service.getDiskUsage()
+        
+        if isCIEnvironment {
+            // In CI, verify our mock values
+            XCTAssertEqual(diskUsage.totalSpace, 1000000000000)
+            XCTAssertEqual(diskUsage.usedSpace, 500000000000)
+            XCTAssertEqual(diskUsage.backupSpace, 200000000000)
+        } else {
+            // For real service, verify the constraints
             XCTAssertGreaterThan(diskUsage.totalSpace, 0)
             XCTAssertGreaterThanOrEqual(diskUsage.usedSpace, 0)
             XCTAssertGreaterThanOrEqual(diskUsage.availableSpace, 0)
             XCTAssertGreaterThanOrEqual(diskUsage.usagePercentage, 0)
             XCTAssertLessThanOrEqual(diskUsage.usagePercentage, 100)
-        } catch TimeMachineServiceError.noBackupDestinationConfigured {
-            // Skip test if no backup destination is configured (in CI environment)
-            if !isCIEnvironment {
-                throw TimeMachineServiceError.noBackupDestinationConfigured
-            }
         }
     }
     
     func testListBackups() async throws {
-        do {
-            // Verify we get at least one backup in our mock data
-            let backups = try await service.listBackups()
+        let backups = try await service.listBackups()
+        
+        if isCIEnvironment {
+            // In CI, verify our mock data
+            XCTAssertEqual(backups.count, 1)
+            let mockBackup = backups[0]
+            XCTAssertEqual(mockBackup.path, "/Volumes/Backups/Mock.backupbundle")
+            XCTAssertEqual(mockBackup.size, 1000000000)
+        } else {
+            // For real service
             XCTAssertFalse(backups.isEmpty)
-            
-            // Check the first backup has valid properties
             if let firstBackup = backups.first {
                 XCTAssertFalse(firstBackup.name.isEmpty)
                 XCTAssertNotNil(firstBackup.date)
-                // Size might be 0 initially as it's calculated asynchronously
                 XCTAssertGreaterThanOrEqual(firstBackup.size, 0)
-            }
-        } catch TimeMachineServiceError.noBackupsFound {
-            // Skip test if no backups are found (in CI environment)
-            if !isCIEnvironment {
-                throw TimeMachineServiceError.noBackupsFound
             }
         }
     }

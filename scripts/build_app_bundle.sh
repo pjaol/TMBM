@@ -13,6 +13,12 @@ mkdir -p build
 # Clean up any existing app bundle
 rm -rf "build/TMBMApp.app"
 
+# Generate the app icon if it doesn't exist
+if [ ! -f "App/Resources/AppIcon.icns" ]; then
+    echo "Generating app icon..."
+    ./scripts/create_app_icon.sh
+fi
+
 # First, build the Core Package as a module
 echo "Building Core Package as module..."
 CORE_MODULE_PATH="build/CoreModule"
@@ -32,6 +38,10 @@ APP_FRAMEWORKS="$APP_CONTENTS/Frameworks"
 mkdir -p "$APP_MACOS"
 mkdir -p "$APP_RESOURCES"
 mkdir -p "$APP_FRAMEWORKS"
+
+# Copy the app icon
+echo "Copying app icon..."
+cp "App/Resources/AppIcon.icns" "$APP_RESOURCES/"
 
 # Compile the Core Package as a module with the correct install name
 echo "Building Core Package module..."
@@ -73,45 +83,9 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
-# Create Info.plist
-cat > "$APP_CONTENTS/Info.plist" << EOF
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>CFBundleExecutable</key>
-    <string>TMBMApp</string>
-    <key>CFBundleIdentifier</key>
-    <string>com.example.TMBMApp</string>
-    <key>CFBundleName</key>
-    <string>TMBMApp</string>
-    <key>CFBundleIconFile</key>
-    <string>AppIcon</string>
-    <key>CFBundleShortVersionString</key>
-    <string>1.0</string>
-    <key>CFBundleInfoDictionaryVersion</key>
-    <string>6.0</string>
-    <key>CFBundlePackageType</key>
-    <string>APPL</string>
-    <key>CFBundleSignature</key>
-    <string>????</string>
-    <key>LSMinimumSystemVersion</key>
-    <string>13.0</string>
-    <key>NSPrincipalClass</key>
-    <string>NSApplication</string>
-    <key>NSHighResolutionCapable</key>
-    <true/>
-    <key>LSUIElement</key>
-    <false/>
-    <key>NSSupportsAutomaticTermination</key>
-    <true/>
-    <key>NSSupportsSuddenTermination</key>
-    <false/>
-    <key>NSRequiresAquaSystemAppearance</key>
-    <false/>
-</dict>
-</plist>
-EOF
+# Copy Info.plist from App directory
+echo "Copying Info.plist..."
+cp "App/Info.plist" "$APP_CONTENTS/Info.plist"
 
 # Code sign the dylib
 echo "Code signing the dylib..."
@@ -132,9 +106,6 @@ cat > "build/entitlements.plist" << EOF
 </dict>
 </plist>
 EOF
-
-# Create a dummy resource file to satisfy code signing requirements
-touch "$APP_RESOURCES/empty.txt"
 
 # Code sign the app
 echo "Code signing the app..."

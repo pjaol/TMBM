@@ -132,3 +132,15 @@ Icon
 *.tmp
 *.bak
 *.backup
+
+<<<<<<< HEAD
+=======
+# Backup files
+*.bak
+*.backup
+
+>>>>>>> feature/app-icon-minimal
+# App icon
+App/Resources/AppIcon.icns
+assets/tmbm_icon.png
+assets/tmbm_icon.pxd

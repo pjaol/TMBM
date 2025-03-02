@@ -39,11 +39,12 @@ fi
 echo "Verifying code signature..."
 codesign --verify --verbose "build/TMBMApp.app"
 
-# Create a zip archive of the app
-echo "Creating zip archive..."
-cd build
-zip -r "TMBMApp-v$VERSION.zip" "TMBMApp.app"
-cd ..
+# Create the DMG
+echo "Creating DMG installer..."
+./scripts/create_dmg.sh
+
+# Rename the DMG to include version
+mv "build/TMBM-Installer.dmg" "build/TMBM-v$VERSION.dmg"
 
 echo "Creating release tag..."
 git tag -a "v$VERSION" -m "Version $VERSION"
@@ -68,9 +69,9 @@ Time Machine Backup Manager (TMBM) is a macOS application that helps you manage 
 
 ## Installation
 
-1. Download the TMBMApp-v$VERSION.zip file
-2. Unzip the file
-3. Move TMBMApp.app to your Applications folder
+1. Download the TMBM-v$VERSION.dmg file
+2. Open the DMG file
+3. Drag TMBM to your Applications folder
 4. Right-click on the app and select "Open" (required for the first launch)
 
 ## Requirements
@@ -80,6 +81,7 @@ Time Machine Backup Manager (TMBM) is a macOS application that helps you manage 
 
 ## Changes in this version
 
+- Added proper DMG installer for easier installation
 - Fixed code signing issue that prevented the app from launching
 - Improved app bundle creation process
 - Enhanced error handling and logging
@@ -89,14 +91,17 @@ EOF
     gh release create "v$VERSION" \
         --title "TMBM v$VERSION" \
         --notes-file release_notes.md \
-        "build/TMBMApp-v$VERSION.zip"
+        "build/TMBM-v$VERSION.dmg"
     
     echo "GitHub release created successfully!"
     echo "Release URL: https://github.com/$(gh repo view --json nameWithOwner -q .nameWithOwner)/releases/tag/v$VERSION"
 else
     echo "GitHub CLI (gh) not found. Please create the release manually:"
     echo "1. Push the tag: git push origin v$VERSION"
-    echo "2. Create a new release on GitHub with the zip file: build/TMBMApp-v$VERSION.zip"
+    echo "2. Create a new release on GitHub with the DMG file: build/TMBM-v$VERSION.dmg"
 fi
+
+# Clean up
+rm -f release_notes.md
 
 echo "Release process completed successfully!" 
