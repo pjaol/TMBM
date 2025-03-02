@@ -51,8 +51,10 @@ jobs:
         swift test --enable-test-discovery --sanitize=thread
       
     - name: Build App
+      env:
+        CI: true
       run: |
-        ./scripts/build_app.sh
+        ./scripts/build_app_bundle.sh
       
     - name: Lint Swift code
       run: |

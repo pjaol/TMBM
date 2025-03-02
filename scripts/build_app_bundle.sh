@@ -121,5 +121,10 @@ echo "You can now open the app with: open $APP_BUNDLE"
 # Clean up build artifacts
 rm -rf "$CORE_MODULE_PATH"
 
-# Open the app
-open "$APP_BUNDLE" 
+# Only open the app if not in CI environment
+if [ -z "$CI" ]; then
+    echo "Opening the app..."
+    open "$APP_BUNDLE"
+else
+    echo "Skipping app opening in CI environment."
+fi 
