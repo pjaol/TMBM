@@ -140,3 +140,7 @@ Icon
 # Certificate files
 tmp_certs/
 *.p12
+
+# Secrets
+.secrets
+TMBM-build
