@@ -37,22 +37,19 @@ jobs:
         chmod +x scripts/*.sh
 
     - name: Setup Keychain
-      if: github.event_name == 'push' && github.ref == 'refs/heads/main'
       run: |
         security create-keychain -p "${{ github.run_id }}" build.keychain
         security default-keychain -s build.keychain
         security unlock-keychain -p "${{ github.run_id }}" build.keychain
         security set-keychain-settings -u build.keychain
-        security list-keychains -d user -s build.keychain
-        security list-keychains
+        security list-keychains -s build.keychain login.keychain
 
     - name: Install Certificates
-      if: github.event_name == 'push' && github.ref == 'refs/heads/main'
       run: |
-        echo "${{ secrets.DEVELOPER_ID_APPLICATION_CERT_BASE64 }}" | base64 --decode > application.p12
-        echo "${{ secrets.DEVELOPER_ID_INSTALLER_CERT_BASE64 }}" | base64 --decode > installer.p12
-        security import application.p12 -k build.keychain -P "${{ secrets.DEVELOPER_ID_APPLICATION_CERT_PASSWORD }}" -A -T /usr/bin/codesign
-        security import installer.p12 -k build.keychain -P "${{ secrets.DEVELOPER_ID_INSTALLER_CERT_PASSWORD }}" -A -T /usr/bin/productsign
+        echo "${{ secrets.APPLE_DEVELOPER_ID_APPLICATION_CERT }}" | base64 --decode > application.p12
+        echo "${{ secrets.APPLE_DEVELOPER_ID_INSTALLER_CERT }}" | base64 --decode > installer.p12
+        security import application.p12 -k build.keychain -P "${{ secrets.APPLE_DEVELOPER_ID_APPLICATION_CERT_PASSWORD }}" -A -T /usr/bin/codesign
+        security import installer.p12 -k build.keychain -P "${{ secrets.APPLE_DEVELOPER_ID_INSTALLER_CERT_PASSWORD }}" -A -T /usr/bin/productsign
         rm -f application.p12 installer.p12
         security set-key-partition-list -S apple-tool:,apple:,codesign: -k "${{ github.run_id }}" build.keychain
         security find-identity -v -p codesigning build.keychain
@@ -67,8 +64,6 @@ jobs:
         CI: true
       run: |
         cd CorePackage
-        # Use --enable-test-discovery to find all tests
-        # Use --sanitize=thread to help with async tests
         swift test --enable-test-discovery --sanitize=thread
       
     - name: Build App
@@ -86,37 +81,35 @@ jobs:
         fi
 
     - name: Sign and Package App
-      if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-      env:
-        DEVELOPER_ID_APPLICATION: "Developer ID Application: patrick o'leary (8NQMHUGDM7)"
-        DEVELOPER_ID_INSTALLER: "Developer ID Installer: patrick o'leary (8NQMHUGDM7)"
       run: |
-        # List available identities
+        # Detect Developer ID dynamically
+        DEVELOPER_ID_APPLICATION=$(security find-identity -v -p codesigning build.keychain | grep "Developer ID Application" | awk '{print $2}')
+        DEVELOPER_ID_INSTALLER=$(security find-identity -v -p codesigning build.keychain | grep "Developer ID Installer" | awk '{print $2}')
+
+        # Debugging: Print detected identities
         security find-identity -v -p codesigning build.keychain
-        
+
         # Sign the app bundle
-        codesign --force --options runtime --sign "$DEVELOPER_ID_APPLICATION" --keychain build.keychain "build/TMBMApp.app"
-        
+        codesign --force --deep --strict --options runtime \
+          --sign "$DEVELOPER_ID_APPLICATION" --keychain build.keychain "build/TMBMApp.app"
+
         # Create and sign DMG
         ./scripts/create_dmg.sh
         productsign --sign "$DEVELOPER_ID_INSTALLER" --keychain build.keychain "build/TMBM-Installer.dmg" "build/TMBM-signed.dmg"
         mv "build/TMBM-signed.dmg" "build/TMBM-Installer.dmg"
 
     - name: Clean up Keychain
-      if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main'
+      if: always()
       run: |
         security delete-keychain build.keychain
       
     - name: Archive app
-      if: github.event_name == 'push' && github.ref == 'refs/heads/main'
       run: |
         mkdir -p build
         cd build
-        # Use absolute paths to avoid tar issues
         tar -czf TMBM-app.tar.gz -C $GITHUB_WORKSPACE App -C $GITHUB_WORKSPACE/build TMBMApp.app
       
     - name: Upload build artifacts
-      if: github.event_name == 'push' && github.ref == 'refs/heads/main'
       uses: actions/upload-artifact@v4
       with:
         name: TMBM-build
