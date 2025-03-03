@@ -120,8 +120,9 @@ jobs:
 
         # Create and sign DMG
         ./scripts/create_dmg.sh
-        productsign --sign "$DEVELOPER_ID_INSTALLER" --keychain build.keychain "build/TMBM-Installer.dmg" "build/TMBM-signed.dmg"
-        mv "build/TMBM-signed.dmg" "build/TMBM-Installer.dmg"
+        ls -l build/
+        #productsign --sign "$DEVELOPER_ID_INSTALLER" --keychain build.keychain "build/TMBM-Installer.dmg" "build/TMBM-signed.dmg"
+        #mv "build/TMBM-signed.dmg" "build/TMBM-Installer.dmg"
 
     - name: Clean up Keychain
       if: always()
