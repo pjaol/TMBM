@@ -53,7 +53,7 @@ jobs:
         security import application.p12 -k build.keychain -P "${{ secrets.APPLE_DEVELOPER_ID_APPLICATION_CERT_PASSWORD }}" -T /usr/bin/codesign
         security import installer.p12 -k build.keychain -P "${{ secrets.APPLE_DEVELOPER_ID_INSTALLER_CERT_PASSWORD }}" -T /usr/bin/productsign
         rm -f application.p12 installer.p12
-        security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "${{ github.run_id }}" build.keychain
+        security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "${{ github.run_id }}" --allow-any-runtime build.keychain
         security find-identity -v -p codesigning build.keychain
       
     - name: Build Core Package
