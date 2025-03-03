@@ -42,7 +42,8 @@ jobs:
         security create-keychain -p "${{ github.run_id }}" build.keychain
         security default-keychain -s build.keychain
         security unlock-keychain -p "${{ github.run_id }}" build.keychain
-        security set-keychain-settings -t 3600 -u build.keychain
+        security set-keychain-settings -t 3600 -l build.keychain
+        security list-keychains -d user -s build.keychain login.keychain
 
     - name: Install Certificates
       if: github.event_name == 'push' && github.ref == 'refs/heads/main'
@@ -53,6 +54,7 @@ jobs:
         security import installer.p12 -k build.keychain -P "${{ secrets.APPLE_DEVELOPER_ID_INSTALLER_CERT_PASSWORD }}" -T /usr/bin/productsign
         rm -f application.p12 installer.p12
         security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "${{ github.run_id }}" build.keychain
+        security find-identity -v -p codesigning build.keychain
       
     - name: Build Core Package
       run: |
@@ -88,12 +90,15 @@ jobs:
         DEVELOPER_ID_APPLICATION: "Developer ID Application: patrick o'leary (8NQMHUGDM7)"
         DEVELOPER_ID_INSTALLER: "Developer ID Installer: patrick o'leary (8NQMHUGDM7)"
       run: |
+        # List available identities
+        security find-identity -v -p codesigning build.keychain
+        
         # Sign the app bundle
-        codesign --force --options runtime --sign "$DEVELOPER_ID_APPLICATION" "build/TMBMApp.app"
+        codesign --force --options runtime --sign "$DEVELOPER_ID_APPLICATION" --keychain build.keychain "build/TMBMApp.app"
         
         # Create and sign DMG
         ./scripts/create_dmg.sh
-        productsign --sign "$DEVELOPER_ID_INSTALLER" "build/TMBM-Installer.dmg" "build/TMBM-signed.dmg"
+        productsign --sign "$DEVELOPER_ID_INSTALLER" --keychain build.keychain "build/TMBM-Installer.dmg" "build/TMBM-signed.dmg"
         mv "build/TMBM-signed.dmg" "build/TMBM-Installer.dmg"
 
     - name: Clean up Keychain
