@@ -58,8 +58,11 @@ jobs:
         echo "Cleaning up certificate files..."
         rm -f application.p12 installer.p12
         
+        echo "Unlocking keychain..."
+        security unlock-keychain -p "${{ github.run_id }}" build.keychain
+        
         echo "Setting key partition list..."
-        security set-key-partition-list -k "${{ github.run_id }}" -S apple-tool:,apple:,codesign:,productsign: build.keychain
+        security set-key-partition-list -S apple-tool:,apple:,codesign:,productsign: -s -k "${{ github.run_id }}" build.keychain
         
         echo "Listing keychains..."
         security list-keychains
@@ -69,6 +72,23 @@ jobs:
         
         echo "Showing codesigning identities..."
         security find-identity -v -p codesigning build.keychain
+        
+        echo "Showing certificate details..."
+        security find-certificate -a -p build.keychain
+
+    - name: Debug Keychain After Import
+      run: |
+        echo "Checking codesigning identities..."
+        security find-identity -v -p codesigning build.keychain
+        
+        echo "Checking all certificates..."
+        security find-certificate -a -p build.keychain
+        
+        echo "Unlocking keychain again..."
+        security unlock-keychain -p "${{ github.run_id }}" build.keychain
+        
+        echo "Setting key partition list again..."
+        security set-key-partition-list -S apple-tool:,apple:,codesign: -k "${{ github.run_id }}" build.keychain
 
     - name: Build Core Package
       run: |
