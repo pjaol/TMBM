@@ -44,18 +44,14 @@ jobs:
     - name: Install Certificates
       env:
         DEVELOPER_ID_APPLICATION_CERTIFICATE: ${{ secrets.DEVELOPER_ID_APPLICATION_CERTIFICATE }}
-        DEVELOPER_ID_INSTALLER_CERTIFICATE: ${{ secrets.DEVELOPER_ID_INSTALLER_CERTIFICATE }}
         DEVELOPER_ID_APPLICATION_PASSWORD: ${{ secrets.DEVELOPER_ID_APPLICATION_PASSWORD }}
-        DEVELOPER_ID_INSTALLER_PASSWORD: ${{ secrets.DEVELOPER_ID_INSTALLER_PASSWORD }}
       run: |
         echo "Decoding and importing certificates..."
         echo "${DEVELOPER_ID_APPLICATION_CERTIFICATE}" | base64 --decode > application.p12
-        echo "${DEVELOPER_ID_INSTALLER_CERTIFICATE}" | base64 --decode > installer.p12
         security import application.p12 -k build.keychain -P "${DEVELOPER_ID_APPLICATION_PASSWORD}" -A -T /usr/bin/codesign
-        security import installer.p12 -k build.keychain -P "${DEVELOPER_ID_INSTALLER_PASSWORD}" -A -T /usr/bin/productsign -T /usr/bin/codesign
-        rm -f application.p12 installer.p12
+        rm -f application.p12
         security unlock-keychain -p "${{ github.run_id }}" build.keychain
-        security set-key-partition-list -S apple-tool:,apple:,codesign:,productsign: -k "${{ github.run_id }}" build.keychain
+        security set-key-partition-list -S apple-tool:,apple:,codesign: -k "${{ github.run_id }}" build.keychain
     - name: Debug Keychain After Import
       run: |
         echo "Verifying installed identities..."
@@ -86,34 +82,47 @@ jobs:
           echo "SwiftLint not installed, skipping linting"
         fi
     - name: Sign and Package App
+      env:
+        APPLE_ID: ${{ secrets.APPLE_ID }}
+        APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        APPLE_NOTARIZATION_PASSWORD: ${{ secrets.APPLE_NOTARIZATION_PASSWORD }}
       run: |
         echo "Available codesigning identities:"
         security find-identity -v -p codesigning build.keychain
         
         # Detect Developer ID dynamically
         DEVELOPER_ID_APPLICATION=$(security find-identity -v -p codesigning build.keychain | grep "Developer ID Application" | awk '{print $2}')
-        DEVELOPER_ID_INSTALLER=$(security find-identity -v build.keychain | grep "Developer ID Installer" | awk '{print $2}')
         
         echo "Detected Developer ID Application: $DEVELOPER_ID_APPLICATION"
-        echo "Detected Developer ID Installer: $DEVELOPER_ID_INSTALLER"
         
         if [ -z "$DEVELOPER_ID_APPLICATION" ]; then
           echo "Error: No Developer ID Application certificate found"
           exit 1
         fi
         
-        if [ -z "$DEVELOPER_ID_INSTALLER" ]; then
-          echo "Error: No Developer ID Installer certificate found"
-          exit 1
-        fi
-        
         echo "Signing app bundle..."
         codesign --force --deep --strict --options runtime \
           --sign "$DEVELOPER_ID_APPLICATION" --keychain build.keychain "build/TMBMApp.app"
-        # Create and sign DMG
+
+        echo "Creating ZIP archive for notarization..."
+        /usr/bin/ditto -c -k --keepParent "build/TMBMApp.app" "build/TMBMApp.zip"
+
+        echo "Submitting app for notarization..."
+        xcrun notarytool submit "build/TMBMApp.zip" \
+          --apple-id "$APPLE_ID" \
+          --team-id "$APPLE_TEAM_ID" \
+          --password "$APPLE_NOTARIZATION_PASSWORD" \
+          --wait
+
+        echo "Stapling notarization ticket..."
+        xcrun stapler staple "build/TMBMApp.app"
+
+        echo "Verifying notarization status..."
+        spctl --assess --verbose=4 "build/TMBMApp.app"
+
+        # Create DMG after successful notarization
+        echo "Creating DMG..."
         ./scripts/create_dmg.sh
-        #productsign --sign "$DEVELOPER_ID_INSTALLER" --keychain build.keychain "build/TMBM-Installer.dmg" "build/TMBM-signed.dmg"
-        #mv "build/TMBM-signed.dmg" "build/TMBM-Installer.dmg"
     - name: Clean up Keychain
       if: always()
       run: security delete-keychain build.keychain
