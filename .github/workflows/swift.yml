@@ -59,7 +59,7 @@ jobs:
         rm -f application.p12 installer.p12
         
         echo "Setting key partition list..."
-        security set-key-partition-list -S apple-tool:,apple:,codesign:,productsign: -k "${{ github.run_id }}" build.keychain
+        security set-key-partition-list -S apple-tool:,apple:,codesign:,productsign: -s -k "${{ github.run_id }}" -T /usr/bin/codesign -T /usr/bin/productsign build.keychain
         
         echo "Listing keychains..."
         security list-keychains
