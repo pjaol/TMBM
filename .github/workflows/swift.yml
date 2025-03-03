@@ -35,6 +35,24 @@ jobs:
     - name: Make scripts executable
       run: |
         chmod +x scripts/*.sh
+
+    - name: Setup Keychain
+      if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+      run: |
+        security create-keychain -p "${{ github.run_id }}" build.keychain
+        security default-keychain -s build.keychain
+        security unlock-keychain -p "${{ github.run_id }}" build.keychain
+        security set-keychain-settings -t 3600 -u build.keychain
+
+    - name: Install Certificates
+      if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+      run: |
+        echo "${{ secrets.APPLE_DEVELOPER_ID_APPLICATION_CERT }}" | base64 --decode > application.p12
+        echo "${{ secrets.APPLE_DEVELOPER_ID_INSTALLER_CERT }}" | base64 --decode > installer.p12
+        security import application.p12 -k build.keychain -P "${{ secrets.APPLE_DEVELOPER_ID_APPLICATION_CERT_PASSWORD }}" -T /usr/bin/codesign
+        security import installer.p12 -k build.keychain -P "${{ secrets.APPLE_DEVELOPER_ID_INSTALLER_CERT_PASSWORD }}" -T /usr/bin/productsign
+        rm -f application.p12 installer.p12
+        security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "${{ github.run_id }}" build.keychain
       
     - name: Build Core Package
       run: |
@@ -63,6 +81,25 @@ jobs:
         else
           echo "SwiftLint not installed, skipping linting"
         fi
+
+    - name: Sign and Package App
+      if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+      env:
+        DEVELOPER_ID_APPLICATION: "Developer ID Application: patrick o'leary (8NQMHUGDM7)"
+        DEVELOPER_ID_INSTALLER: "Developer ID Installer: patrick o'leary (8NQMHUGDM7)"
+      run: |
+        # Sign the app bundle
+        codesign --force --options runtime --sign "$DEVELOPER_ID_APPLICATION" "build/TMBMApp.app"
+        
+        # Create and sign DMG
+        ./scripts/create_dmg.sh
+        productsign --sign "$DEVELOPER_ID_INSTALLER" "build/TMBM-Installer.dmg" "build/TMBM-signed.dmg"
+        mv "build/TMBM-signed.dmg" "build/TMBM-Installer.dmg"
+
+    - name: Clean up Keychain
+      if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main'
+      run: |
+        security delete-keychain build.keychain
       
     - name: Archive app
       if: github.event_name == 'push' && github.ref == 'refs/heads/main'
@@ -77,5 +114,7 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: TMBM-build
-        path: ./build/TMBM-app.tar.gz
+        path: |
+          ./build/TMBM-app.tar.gz
+          ./build/TMBM-Installer.dmg
         retention-days: 7 
