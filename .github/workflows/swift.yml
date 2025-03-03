@@ -96,7 +96,7 @@ jobs:
         security unlock-keychain -p "${{ github.run_id }}" build.keychain
         
         echo "Setting key partition list again..."
-        security set-key-partition-list -S apple-tool:,apple:,codesign: -k "${{ github.run_id }}" build.keychain
+        security set-key-partition-list -S apple-tool:,apple:,codesign:,productsign: -k "${{ github.run_id }}" build.keychain
 
     - name: Build Core Package
       run: |
