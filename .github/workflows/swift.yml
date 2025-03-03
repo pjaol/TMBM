@@ -62,7 +62,7 @@ jobs:
         security unlock-keychain -p "${{ github.run_id }}" build.keychain
         
         echo "Setting key partition list..."
-        security set-key-partition-list -S apple-tool:,apple:,codesign:,productsign: -s -k "${{ github.run_id }}" build.keychain
+        security set-key-partition-list -S apple-tool:,apple:,codesign:,productsign: -k "${{ github.run_id }}" build.keychain
         
         echo "Listing keychains..."
         security list-keychains
@@ -72,6 +72,9 @@ jobs:
         
         echo "Showing codesigning identities..."
         security find-identity -v -p codesigning build.keychain
+        
+        echo "Showing installer identities..."
+        security find-identity -v -p installer build.keychain
         
         echo "Showing certificate details..."
         security find-certificate -a -p build.keychain
