@@ -46,14 +46,30 @@ jobs:
 
     - name: Install Certificates
       run: |
+        echo "Decoding certificates..."
         echo "${{ secrets.APPLE_DEVELOPER_ID_APPLICATION_CERT }}" | base64 --decode > application.p12
         echo "${{ secrets.APPLE_DEVELOPER_ID_INSTALLER_CERT }}" | base64 --decode > installer.p12
+        
+        echo "Importing application certificate..."
         security import application.p12 -k build.keychain -P "${{ secrets.APPLE_DEVELOPER_ID_APPLICATION_CERT_PASSWORD }}" -A -T /usr/bin/codesign
+        echo "Importing installer certificate..."
         security import installer.p12 -k build.keychain -P "${{ secrets.APPLE_DEVELOPER_ID_INSTALLER_CERT_PASSWORD }}" -A -T /usr/bin/productsign
+        
+        echo "Cleaning up certificate files..."
         rm -f application.p12 installer.p12
+        
+        echo "Setting key partition list..."
         security set-key-partition-list -S apple-tool:,apple:,codesign:,productsign: -k "${{ github.run_id }}" build.keychain
+        
+        echo "Listing keychains..."
+        security list-keychains
+        
+        echo "Showing keychain contents..."
+        security find-identity -v build.keychain
+        
+        echo "Showing codesigning identities..."
         security find-identity -v -p codesigning build.keychain
-      
+
     - name: Build Core Package
       run: |
         cd CorePackage
@@ -82,14 +98,30 @@ jobs:
 
     - name: Sign and Package App
       run: |
+        echo "Current keychain list:"
+        security list-keychains
+        
+        echo "Available codesigning identities:"
+        security find-identity -v -p codesigning build.keychain
+        
         # Detect Developer ID dynamically
         DEVELOPER_ID_APPLICATION=$(security find-identity -v -p codesigning build.keychain | grep "Developer ID Application" | awk '{print $2}')
         DEVELOPER_ID_INSTALLER=$(security find-identity -v -p codesigning build.keychain | grep "Developer ID Installer" | awk '{print $2}')
-
-        # Debugging: Print detected identities
-        security find-identity -v -p codesigning build.keychain
-
-        # Sign the app bundle
+        
+        echo "Detected Developer ID Application: $DEVELOPER_ID_APPLICATION"
+        echo "Detected Developer ID Installer: $DEVELOPER_ID_INSTALLER"
+        
+        if [ -z "$DEVELOPER_ID_APPLICATION" ]; then
+          echo "Error: No Developer ID Application certificate found"
+          exit 1
+        fi
+        
+        if [ -z "$DEVELOPER_ID_INSTALLER" ]; then
+          echo "Error: No Developer ID Installer certificate found"
+          exit 1
+        fi
+        
+        echo "Signing app bundle..."
         codesign --force --deep --strict --options runtime \
           --sign "$DEVELOPER_ID_APPLICATION" --keychain build.keychain "build/TMBMApp.app"
 
