@@ -52,13 +52,23 @@ jobs:
         DEVELOPER_ID_INSTALLER_PASSWORD: ${{ secrets.DEVELOPER_ID_INSTALLER_PASSWORD }}
       run: |
         echo "Decoding certificates..."
+        echo "Checking if installer certificate is present..."
+        if [ -z "$DEVELOPER_ID_INSTALLER_CERTIFICATE" ]; then
+          echo "Warning: DEVELOPER_ID_INSTALLER_CERTIFICATE is empty"
+        else
+          echo "DEVELOPER_ID_INSTALLER_CERTIFICATE is set"
+        fi
+
         echo "$DEVELOPER_ID_APPLICATION_CERTIFICATE" | base64 --decode > application.p12
         echo "$DEVELOPER_ID_INSTALLER_CERTIFICATE" | base64 --decode > installer.p12
+
+        echo "Checking if certificate files were created..."
+        ls -l application.p12 installer.p12 || echo "One or more certificate files are missing"
 
         echo "Importing application certificate..."
         security import application.p12 -k build.keychain -P "$DEVELOPER_ID_APPLICATION_PASSWORD" -A -T /usr/bin/codesign
         echo "Importing installer certificate..."
-        security import installer.p12 -k build.keychain -P "$DEVELOPER_ID_INSTALLER_PASSWORD" -A -T /usr/bin/productsign
+        security import installer.p12 -k build.keychain -P "$DEVELOPER_ID_INSTALLER_PASSWORD" -A -T /usr/bin/productsign || echo "Failed to import installer certificate"
 
         echo "Cleaning up certificate files..."
         rm -f application.p12 installer.p12
