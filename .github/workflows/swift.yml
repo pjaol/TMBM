@@ -107,8 +107,7 @@ jobs:
         
         echo "Packaging into DMG..."
         ./scripts/create_dmg.sh
-
-        echo "Package signing and DMG creation completed!"
+        ls -l build/
 
     - name: Clean up Keychain
       if: always()
