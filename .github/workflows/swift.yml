@@ -26,16 +26,41 @@ jobs:
       with:
         xcode-version: latest-stable
         
-    - name: Show Xcode version
-      run: xcodebuild -version
-      
-    - name: Show Swift version
-      run: swift --version
+    - name: Show Xcode & Swift version
+      run: |
+        xcodebuild -version
+        swift --version
       
     - name: Make scripts executable
+      run: chmod +x scripts/*.sh
+
+    - name: Setup Keychain
       run: |
-        chmod +x scripts/*.sh
-      
+        security create-keychain -p "${{ github.run_id }}" build.keychain
+        security default-keychain -s build.keychain
+        security unlock-keychain -p "${{ github.run_id }}" build.keychain
+        security set-keychain-settings -u build.keychain
+        security list-keychains -s build.keychain login.keychain
+    - name: Install Certificates
+      env:
+        DEVELOPER_ID_APPLICATION_CERTIFICATE: ${{ secrets.DEVELOPER_ID_APPLICATION_CERTIFICATE }}
+        DEVELOPER_ID_INSTALLER_CERTIFICATE: ${{ secrets.DEVELOPER_ID_INSTALLER_CERTIFICATE }}
+        DEVELOPER_ID_APPLICATION_PASSWORD: ${{ secrets.DEVELOPER_ID_APPLICATION_PASSWORD }}
+        DEVELOPER_ID_INSTALLER_PASSWORD: ${{ secrets.DEVELOPER_ID_INSTALLER_PASSWORD }}
+      run: |
+        echo "Decoding and importing certificates..."
+        echo "${DEVELOPER_ID_APPLICATION_CERTIFICATE}" | base64 --decode > application.p12
+        echo "${DEVELOPER_ID_INSTALLER_CERTIFICATE}" | base64 --decode > installer.p12
+        security import application.p12 -k build.keychain -P "${DEVELOPER_ID_APPLICATION_PASSWORD}" -A -T /usr/bin/codesign
+        security import installer.p12 -k build.keychain -P "${DEVELOPER_ID_INSTALLER_PASSWORD}" -A -T /usr/bin/productsign -T /usr/bin/codesign
+        rm -f application.p12 installer.p12
+        security unlock-keychain -p "${{ github.run_id }}" build.keychain
+        security set-key-partition-list -S apple-tool:,apple:,codesign:,productsign: -k "${{ github.run_id }}" build.keychain
+    - name: Debug Keychain After Import
+      run: |
+        echo "Verifying installed identities..."
+        security find-identity -v build.keychain
+        security find-certificate -a -p build.keychain
     - name: Build Core Package
       run: |
         cd CorePackage
@@ -46,15 +71,12 @@ jobs:
         CI: true
       run: |
         cd CorePackage
-        # Use --enable-test-discovery to find all tests
-        # Use --sanitize=thread to help with async tests
         swift test --enable-test-discovery --sanitize=thread
       
     - name: Build App
       env:
         CI: true
-      run: |
-        ./scripts/build_app_bundle.sh
+      run: ./scripts/build_app_bundle.sh
       
     - name: Lint Swift code
       run: |
@@ -63,19 +85,49 @@ jobs:
         else
           echo "SwiftLint not installed, skipping linting"
         fi
+    - name: Sign and Package App
+      run: |
+        echo "Available codesigning identities:"
+        security find-identity -v -p codesigning build.keychain
+        
+        # Detect Developer ID dynamically
+        DEVELOPER_ID_APPLICATION=$(security find-identity -v -p codesigning build.keychain | grep "Developer ID Application" | awk '{print $2}')
+        DEVELOPER_ID_INSTALLER=$(security find-identity -v build.keychain | grep "Developer ID Installer" | awk '{print $2}')
+        
+        echo "Detected Developer ID Application: $DEVELOPER_ID_APPLICATION"
+        echo "Detected Developer ID Installer: $DEVELOPER_ID_INSTALLER"
+        
+        if [ -z "$DEVELOPER_ID_APPLICATION" ]; then
+          echo "Error: No Developer ID Application certificate found"
+          exit 1
+        fi
+        
+        if [ -z "$DEVELOPER_ID_INSTALLER" ]; then
+          echo "Error: No Developer ID Installer certificate found"
+          exit 1
+        fi
+        
+        echo "Signing app bundle..."
+        codesign --force --deep --strict --options runtime \
+          --sign "$DEVELOPER_ID_APPLICATION" --keychain build.keychain "build/TMBMApp.app"
+        # Create and sign DMG
+        ./scripts/create_dmg.sh
+        #productsign --sign "$DEVELOPER_ID_INSTALLER" --keychain build.keychain "build/TMBM-Installer.dmg" "build/TMBM-signed.dmg"
+        #mv "build/TMBM-signed.dmg" "build/TMBM-Installer.dmg"
+    - name: Clean up Keychain
+      if: always()
+      run: security delete-keychain build.keychain
       
     - name: Archive app
-      if: github.event_name == 'push' && github.ref == 'refs/heads/main'
       run: |
         mkdir -p build
-        cd build
-        # Use absolute paths to avoid tar issues
-        tar -czf TMBM-app.tar.gz -C $GITHUB_WORKSPACE App -C $GITHUB_WORKSPACE/build TMBMApp.app
+        tar -czf build/TMBM-app.tar.gz -C $GITHUB_WORKSPACE App -C $GITHUB_WORKSPACE/build TMBMApp.app
       
     - name: Upload build artifacts
-      if: github.event_name == 'push' && github.ref == 'refs/heads/main'
       uses: actions/upload-artifact@v4
       with:
         name: TMBM-build
-        path: ./build/TMBM-app.tar.gz
-        retention-days: 7 
+        path: |
+          ./build/TMBM-app.tar.gz
+          ./build/TMBM-Installer.dmg
+        retention-days: 7  
