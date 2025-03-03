@@ -26,15 +26,13 @@ jobs:
       with:
         xcode-version: latest-stable
         
-    - name: Show Xcode version
-      run: xcodebuild -version
-      
-    - name: Show Swift version
-      run: swift --version
+    - name: Show Xcode & Swift version
+      run: |
+        xcodebuild -version
+        swift --version
       
     - name: Make scripts executable
-      run: |
-        chmod +x scripts/*.sh
+      run: chmod +x scripts/*.sh
 
     - name: Setup Keychain
       run: |
@@ -51,62 +49,23 @@ jobs:
         DEVELOPER_ID_APPLICATION_PASSWORD: ${{ secrets.DEVELOPER_ID_APPLICATION_PASSWORD }}
         DEVELOPER_ID_INSTALLER_PASSWORD: ${{ secrets.DEVELOPER_ID_INSTALLER_PASSWORD }}
       run: |
-        echo "Decoding certificates..."
-        echo "Checking if installer certificate is present..."
-        if [ -z "$DEVELOPER_ID_INSTALLER_CERTIFICATE" ]; then
-          echo "Warning: DEVELOPER_ID_INSTALLER_CERTIFICATE is empty"
-        else
-          echo "DEVELOPER_ID_INSTALLER_CERTIFICATE is set"
-        fi
+        echo "Decoding and importing certificates..."
+        echo "${DEVELOPER_ID_APPLICATION_CERTIFICATE}" | base64 --decode > application.p12
+        echo "${DEVELOPER_ID_INSTALLER_CERTIFICATE}" | base64 --decode > installer.p12
 
-        echo "$DEVELOPER_ID_APPLICATION_CERTIFICATE" | base64 --decode > application.p12
-        echo "$DEVELOPER_ID_INSTALLER_CERTIFICATE" | base64 --decode > installer.p12
+        security import application.p12 -k build.keychain -P "${DEVELOPER_ID_APPLICATION_PASSWORD}" -A -T /usr/bin/codesign
+        security import installer.p12 -k build.keychain -P "${DEVELOPER_ID_INSTALLER_PASSWORD}" -A -T /usr/bin/productsign -T /usr/bin/codesign
 
-        echo "Checking if certificate files were created..."
-        ls -l application.p12 installer.p12 || echo "One or more certificate files are missing"
-
-        echo "Importing application certificate..."
-        security import application.p12 -k build.keychain -P "$DEVELOPER_ID_APPLICATION_PASSWORD" -A -T /usr/bin/codesign
-        echo "Importing installer certificate..."
-        security import installer.p12 -k build.keychain -P "$DEVELOPER_ID_INSTALLER_PASSWORD" -A -T /usr/bin/productsign || echo "Failed to import installer certificate"
-
-        echo "Cleaning up certificate files..."
         rm -f application.p12 installer.p12
 
-        echo "Unlocking keychain..."
         security unlock-keychain -p "${{ github.run_id }}" build.keychain
-
-        echo "Setting key partition list..."
         security set-key-partition-list -S apple-tool:,apple:,codesign:,productsign: -k "${{ github.run_id }}" build.keychain
-
-        echo "Listing keychains..."
-        security list-keychains
-
-        echo "Showing all identities..."
-        security find-identity -v build.keychain
-
-        echo "Showing codesigning identities..."
-        security find-identity -v -p codesigning build.keychain
-
-        echo "Showing all certificates..."
-        security find-certificate -a -c "Developer ID" build.keychain
-
-        echo "Setting default keychain..."
-        security default-keychain -s build.keychain
 
     - name: Debug Keychain After Import
       run: |
-        echo "Checking codesigning identities..."
-        security find-identity -v -p codesigning build.keychain
-        
-        echo "Checking all certificates..."
+        echo "Verifying installed identities..."
+        security find-identity -v build.keychain
         security find-certificate -a -p build.keychain
-        
-        echo "Unlocking keychain again..."
-        security unlock-keychain -p "${{ github.run_id }}" build.keychain
-        
-        echo "Setting key partition list again..."
-        security set-key-partition-list -S apple-tool:,apple:,codesign:,productsign: -k "${{ github.run_id }}" build.keychain
 
     - name: Build Core Package
       run: |
@@ -123,8 +82,7 @@ jobs:
     - name: Build App
       env:
         CI: true
-      run: |
-        ./scripts/build_app_bundle.sh
+      run: ./scripts/build_app_bundle.sh
       
     - name: Lint Swift code
       run: |
@@ -136,15 +94,12 @@ jobs:
 
     - name: Sign and Package App
       run: |
-        echo "Current keychain list:"
-        security list-keychains
-        
         echo "Available codesigning identities:"
         security find-identity -v -p codesigning build.keychain
         
         # Detect Developer ID dynamically
         DEVELOPER_ID_APPLICATION=$(security find-identity -v -p codesigning build.keychain | grep "Developer ID Application" | awk '{print $2}')
-        DEVELOPER_ID_INSTALLER=$(security find-identity -v -p codesigning build.keychain | grep "Developer ID Installer" | awk '{print $2}')
+        DEVELOPER_ID_INSTALLER=$(security find-identity -v build.keychain | grep "Developer ID Installer" | awk '{print $2}')
         
         echo "Detected Developer ID Application: $DEVELOPER_ID_APPLICATION"
         echo "Detected Developer ID Installer: $DEVELOPER_ID_INSTALLER"
@@ -170,14 +125,12 @@ jobs:
 
     - name: Clean up Keychain
       if: always()
-      run: |
-        security delete-keychain build.keychain
+      run: security delete-keychain build.keychain
       
     - name: Archive app
       run: |
         mkdir -p build
-        cd build
-        tar -czf TMBM-app.tar.gz -C $GITHUB_WORKSPACE App -C $GITHUB_WORKSPACE/build TMBMApp.app
+        tar -czf build/TMBM-app.tar.gz -C $GITHUB_WORKSPACE App -C $GITHUB_WORKSPACE/build TMBMApp.app
       
     - name: Upload build artifacts
       uses: actions/upload-artifact@v4
@@ -186,4 +139,4 @@ jobs:
         path: |
           ./build/TMBM-app.tar.gz
           ./build/TMBM-Installer.dmg
-        retention-days: 7 
+        retention-days: 7  
